@@ -307,21 +307,36 @@
           <div class="mono" id="selectedFile">-</div>
         </div>
         <div>
-          <div class="small" style="margin-bottom:6px;">Docelowy SRT</div>
-          <div class="mono" id="outputName">-</div>
+          <div class="small" style="margin-bottom:6px;">Tlumaczenie</div>
+          <select id="translateLang">
+            <option value="pl" selected>Polski (pl)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div>
+          <div class="small" style="margin-bottom:6px;">SRT oryginalny</div>
+          <div class="mono" id="outputNameOriginal">-</div>
+        </div>
+        <div>
+          <div class="small" style="margin-bottom:6px;">SRT tlumaczenie (pl)</div>
+          <div class="mono" id="outputNameTranslated">-</div>
         </div>
       </div>
 
       <div class="toolbar" style="margin-top:14px;">
         <button id="startBtn" class="primary" onclick="startJob()">Start transkrypcji</button>
         <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset</button>
-        <a id="downloadLink" href="#" style="display:none;">Pobierz SRT</a>
+        <a id="downloadLinkOriginal" href="#" style="display:none;">Pobierz SRT (oryginal)</a>
+        <a id="downloadLinkTranslated" href="#" style="display:none;">Pobierz SRT (pl)</a>
       </div>
 
       <div style="margin-top:10px;">
         <div class="bar"><div id="barFill"></div></div>
         <div class="statusRow">
-          <span class="badge" id="statusBadge">status: <strong>-</strong></span>
+          <span class="badge" id="statusBadge">transkrypcja: <strong>-</strong></span>
+          <span class="badge" id="translationStatusBadge" style="display:none;">tlumaczenie: <strong>-</strong></span>
           <span class="badge" id="langBadge" style="display:none;">lang: <strong>-</strong></span>
           <span class="badge">progress: <strong id="progressText">0.0%</strong></span>
         </div>
@@ -370,9 +385,22 @@ function setProgress(pct){
   document.getElementById("progressText").textContent = `${pct.toFixed(1)}%`;
 }
 
-function setStatus(text){
+function setTranscriptionStatus(text){
   const b = document.getElementById("statusBadge");
-  b.innerHTML = `status: <strong>${text}</strong>`;
+  b.innerHTML = `transkrypcja: <strong>${text}</strong>`;
+}
+
+function setTranslationStatus(text, pct){
+  const b = document.getElementById("translationStatusBadge");
+  if(!text || text === "skipped"){
+    b.style.display = "none";
+    return;
+  }
+  b.style.display = "inline-flex";
+  const pctText = (pct !== undefined && pct !== null && !Number.isNaN(pct))
+    ? ` <span class="small">(${pct.toFixed(1)}%)</span>`
+    : "";
+  b.innerHTML = `tlumaczenie: <strong>${text}</strong>${pctText}`;
 }
 
 async function refreshFiles(){
@@ -401,15 +429,20 @@ function resetUi(){
   es = null;
   currentJobId = null;
 
-  document.getElementById("outputName").textContent = "-";
-  document.getElementById("downloadLink").style.display = "none";
-  document.getElementById("downloadLink").href = "#";
+  document.getElementById("outputNameOriginal").textContent = "-";
+  document.getElementById("outputNameTranslated").textContent = "-";
+  document.getElementById("downloadLinkOriginal").style.display = "none";
+  document.getElementById("downloadLinkOriginal").href = "#";
+  document.getElementById("downloadLinkTranslated").style.display = "none";
+  document.getElementById("downloadLinkTranslated").href = "#";
   document.getElementById("langBadge").style.display = "none";
   document.getElementById("langBadge").innerHTML = "lang: <strong>-</strong>";
+  document.getElementById("translationStatusBadge").style.display = "none";
   document.getElementById("resetBtn").disabled = true;
 
   setProgress(0);
-  setStatus("-");
+  setTranscriptionStatus("-");
+  setTranslationStatus(null, null);
   resetTimer();
 
   document.getElementById("startBtn").disabled = false;
@@ -448,13 +481,19 @@ async function startJob(){
 
   // reset UI + timer
   setProgress(0);
-  document.getElementById("outputName").textContent = "-";
-  document.getElementById("downloadLink").style.display = "none";
-  document.getElementById("downloadLink").href = "#";
+  document.getElementById("outputNameOriginal").textContent = "-";
+  document.getElementById("outputNameTranslated").textContent = "-";
+  document.getElementById("downloadLinkOriginal").style.display = "none";
+  document.getElementById("downloadLinkOriginal").href = "#";
+  document.getElementById("downloadLinkTranslated").style.display = "none";
+  document.getElementById("downloadLinkTranslated").href = "#";
   document.getElementById("langBadge").style.display = "none";
   document.getElementById("resetBtn").disabled = false;
 
-  setStatus("wysyłam job...");
+  const translateTo = document.getElementById("translateLang").value;
+
+  setTranscriptionStatus("wysyłam job...");
+  setTranslationStatus(translateTo ? "queued" : null, 0);
   document.getElementById("startBtn").disabled = true;
 
   startTimer();
@@ -465,7 +504,8 @@ async function startJob(){
     device: "cuda",
     compute_type: "float16",
     vad: true,
-    beam_size: 5
+    beam_size: 5,
+    translate_to: translateTo
   };
 
   const res = await fetch("/api/jobs", {
@@ -475,7 +515,7 @@ async function startJob(){
   });
   const data = await res.json();
   if(!res.ok){
-    setStatus("błąd");
+    setTranscriptionStatus("błąd");
     stopTimer();
     document.getElementById("startBtn").disabled = false;
     alert(data.detail || res.statusText);
@@ -493,11 +533,16 @@ function listenJob(jobId){
   es.onmessage = (ev) => {
     const job = JSON.parse(ev.data);
 
-    setStatus(job.status || "-");
+    const transcriptionStatus = job.transcription_status || job.status || "-";
+    setTranscriptionStatus(transcriptionStatus);
+    setTranslationStatus(job.translation_status, job.translation_progress);
     setProgress(job.progress || 0);
 
     if(job.output_name){
-      document.getElementById("outputName").textContent = job.output_name;
+      document.getElementById("outputNameOriginal").textContent = job.output_name;
+    }
+    if(job.translation_output_name){
+      document.getElementById("outputNameTranslated").textContent = job.translation_output_name;
     }
 
     if(job.detected_language){
@@ -506,11 +551,24 @@ function listenJob(jobId){
       lb.innerHTML = `lang: <strong>${job.detected_language}</strong> <span class="small">(${(job.language_probability||0).toFixed(3)})</span>`;
     }
 
+    const originalLink = document.getElementById("downloadLinkOriginal");
+    if(job.output_name && job.transcription_status === "done"){
+      originalLink.href = `/api/jobs/${jobId}/srt`;
+      originalLink.style.display = "inline";
+    }else{
+      originalLink.style.display = "none";
+    }
+
+    const translatedLink = document.getElementById("downloadLinkTranslated");
+    if(job.translation_output_name && job.translation_status === "done"){
+      translatedLink.href = `/api/jobs/${jobId}/srt-translated`;
+      translatedLink.style.display = "inline";
+    }else{
+      translatedLink.style.display = "none";
+    }
+
     if(job.status === "done"){
       stopTimer();
-      const a = document.getElementById("downloadLink");
-      a.href = `/api/jobs/${jobId}/srt`;
-      a.style.display = "inline";
       document.getElementById("startBtn").disabled = false;
       es.close();
     }
@@ -519,7 +577,7 @@ function listenJob(jobId){
       stopTimer();
       document.getElementById("startBtn").disabled = false;
       es.close();
-      alert(job.error || "Unknown error");
+      alert(job.error || job.translation_error || "Unknown error");
     }
   };
 

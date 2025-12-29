@@ -1,8 +1,11 @@
 import asyncio
+import gc
 import json
+import logging
 import os
 import re
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -21,6 +24,12 @@ UPLOAD_DIR = Path("/work/uploads")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("fw-web")
+
 # Twoje mapowanie "ja" -> "jp"
 LANG_ALIAS = {
     "ja": "jp",
@@ -28,11 +37,33 @@ LANG_ALIAS = {
 
 MEDIA_EXT = {".mkv", ".mp4", ".avi", ".mov", ".mp3", ".wav", ".m4a", ".flac", ".webm"}
 
+TRANSLATION_MODEL_NAME = "facebook/nllb-200-3.3B"
+NLLB_SRC_LANG = {
+    "ja": "jpn_Jpan",
+    "en": "eng_Latn",
+    "pl": "pol_Latn",
+    "de": "deu_Latn",
+    "fr": "fra_Latn",
+    "es": "spa_Latn",
+    "it": "ita_Latn",
+    "pt": "por_Latn",
+    "ru": "rus_Cyrl",
+    "uk": "ukr_Cyrl",
+    "zh": "zho_Hans",
+    "ko": "kor_Hang",
+}
+NLLB_TGT_LANG = {
+    "pl": "pol_Latn",
+}
+
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = asyncio.Lock()
 
 MODEL_CACHE: Dict[str, WhisperModel] = {}
 MODEL_LOCK = asyncio.Lock()
+
+TRANSLATION_MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
+TRANSLATION_MODEL_LOCK = threading.Lock()
 
 def safe_relpath(p: str) -> str:
     # blokujemy path traversal
@@ -80,34 +111,229 @@ async def update_job(job_id: str, **fields):
             return
         JOBS[job_id].update(fields)
 
+def cleanup_cuda_memory():
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+    gc.collect()
+
+def pick_translation_device() -> str:
+    try:
+        import torch
+    except Exception:
+        return "cpu"
+
+    if not torch.cuda.is_available():
+        return "cpu"
+
+    try:
+        major, minor = torch.cuda.get_device_capability()
+        arch = f"sm_{major}{minor}"
+        supported = torch.cuda.get_arch_list()
+        if arch not in supported:
+            logger.warning("Torch does not support GPU arch %s; falling back to CPU", arch)
+            return "cpu"
+    except Exception:
+        logger.warning("Failed to validate CUDA arch; falling back to CPU")
+        return "cpu"
+
+    return "cuda"
+
+def is_cuda_oom(err: Exception) -> bool:
+    msg = str(err).lower()
+    return "out of memory" in msg or "cuda out of memory" in msg
+
 def build_output_name(input_path: Path, detected_lang: str) -> str:
     lang = (detected_lang or "unk").lower()
     lang_tag = LANG_ALIAS.get(lang, lang)
     return f"{input_path.stem}.{lang_tag}.srt"
 
+def build_output_name_lang(input_path: Path, lang_tag: str) -> str:
+    return f"{input_path.stem}.{lang_tag}.srt"
+
+def get_translation_model(device: str):
+    import torch
+    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+    with TRANSLATION_MODEL_LOCK:
+        cached = TRANSLATION_MODEL_CACHE.get(device)
+        if cached:
+            return cached["tokenizer"], cached["model"]
+
+        logger.info("Loading translation model %s on %s", TRANSLATION_MODEL_NAME, device)
+        torch_dtype = torch.float16 if device == "cuda" else torch.float32
+        tokenizer = AutoTokenizer.from_pretrained(TRANSLATION_MODEL_NAME)
+        model = AutoModelForSeq2SeqLM.from_pretrained(
+            TRANSLATION_MODEL_NAME,
+            torch_dtype=torch_dtype,
+        )
+        if device == "cuda":
+            model = model.to(device)
+        model.eval()
+
+        TRANSLATION_MODEL_CACHE[device] = {"tokenizer": tokenizer, "model": model}
+        logger.info("Translation model loaded")
+        return tokenizer, model
+
+def release_translation_model(device: str):
+    with TRANSLATION_MODEL_LOCK:
+        cached = TRANSLATION_MODEL_CACHE.pop(device, None)
+    if cached:
+        try:
+            del cached
+        finally:
+            cleanup_cuda_memory()
+
+def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop, device: str):
+    import torch
+
+    if device == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        if hasattr(torch, "set_float32_matmul_precision"):
+            torch.set_float32_matmul_precision("high")
+    else:
+        logger.info("Translation running on CPU")
+
+    tokenizer, model = get_translation_model(device)
+    loop.call_soon_threadsafe(asyncio.create_task, update_job(
+        job_id, translation_status="running", translation_device=device
+    ))
+    if hasattr(tokenizer, "lang_code_to_id"):
+        forced_bos_token_id = tokenizer.lang_code_to_id.get(tgt_lang)
+    else:
+        forced_bos_token_id = tokenizer.convert_tokens_to_ids(tgt_lang)
+    if forced_bos_token_id is None:
+        raise ValueError(f"Unsupported target language: {tgt_lang}")
+
+    tokenizer.src_lang = src_lang
+
+    translated = []
+    total = len(segments)
+    for idx, seg in enumerate(segments, start=1):
+        text = seg["text"].strip()
+        if text:
+            inputs = tokenizer(text, return_tensors="pt", truncation=True)
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            with torch.inference_mode():
+                output_tokens = model.generate(
+                    **inputs,
+                    forced_bos_token_id=forced_bos_token_id,
+                    max_new_tokens=256,
+                )
+            translated_text = tokenizer.batch_decode(output_tokens, skip_special_tokens=True)[0]
+        else:
+            translated_text = ""
+
+        translated.append({
+            "start": seg["start"],
+            "end": seg["end"],
+            "text": translated_text,
+        })
+
+        if total and (idx % 5 == 0 or idx == total):
+            pct = (idx / total) * 100.0
+            loop.call_soon_threadsafe(asyncio.create_task, update_job(
+                job_id, translation_progress=pct
+            ))
+
+    return translated
+
 def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str, device: str,
-                          compute_type: str, vad: bool, beam_size: int):
+                          compute_type: str, vad: bool, beam_size: int,
+                          translate_to: Optional[str]):
     duration = get_duration_seconds(input_path)
 
+    logger.info("Job %s: start transcription (%s)", job_id, input_path)
     loop.call_soon_threadsafe(asyncio.create_task, update_job(
-        job_id, status="running", progress=0.0, duration=duration
+        job_id,
+        status="running",
+        transcription_status="running",
+        progress=0.0,
+        duration=duration,
     ))
-    loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, status="running", progress=0.0, duration=duration))
 
-    # load model (sync stworzymy przez async getter w innym kroku - prościej: osobno)
-    # tu model przekazujemy inaczej, ale zostawiamy wątkiem: model będzie w cache w async.
-    # obejście: w sync tworzymy nowy model, ale to wolniejsze; więc robimy prosty trick:
+    # load model (sync stworzymy przez async getter w innym kroku - pro'ciej: osobno)
+    # tu model przekazujemy inaczej, ale zostawiamy w atkiem: model bedzie w cache w async.
+    # obej cie: w sync tworzymy nowy model, ale to wolniejsze; wiec robimy prosty trick:
     # w tym demo: model w sync tworzymy, bo i tak raz na start.
-    # (jeśli chcesz, mogę to przepiąć 1:1 na async cache)
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+    # (jesli chcesz, moge to przepisac 1:1 na async cache)
+    def transcribe_attempt(attempt_compute_type: str):
+        logger.info("Job %s: loading whisper model (compute_type=%s)", job_id, attempt_compute_type)
+        model = WhisperModel(model_name, device=device, compute_type=attempt_compute_type)
+        try:
+            segments, info = model.transcribe(
+                str(input_path),
+                language=None,          # auto detect
+                task="transcribe",      # zawsze oryginal
+                vad_filter=vad,
+                beam_size=beam_size,
+            )
 
-    segments, info = model.transcribe(
-        str(input_path),
-        language=None,          # auto detect
-        task="transcribe",      # zawsze oryginał
-        vad_filter=vad,
-        beam_size=beam_size,
-    )
+            segments_list = []
+            for seg in segments:
+                segments_list.append({
+                    "start": seg.start,
+                    "end": seg.end,
+                    "text": seg.text,
+                })
+
+                # progress: segment.end / duration
+                if duration and duration > 0:
+                    pct = max(0.0, min(99.0, (seg.end / duration) * 100.0))
+                    loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, progress=pct))
+
+            return segments_list, info
+        finally:
+            del model
+            cleanup_cuda_memory()
+
+    compute_types = [compute_type]
+    if device == "cuda" and compute_type != "int8_float16":
+        compute_types.append("int8_float16")
+
+    segments_list = None
+    info = None
+    used_compute_type = compute_type
+    try:
+        for idx, attempt_compute_type in enumerate(compute_types):
+            if idx > 0:
+                loop.call_soon_threadsafe(asyncio.create_task, update_job(
+                    job_id,
+                    transcription_status="retry_int8",
+                    progress=0.0,
+                ))
+                logger.warning(
+                    "Job %s: retrying transcription with compute_type=%s",
+                    job_id,
+                    attempt_compute_type,
+                )
+            try:
+                segments_list, info = transcribe_attempt(attempt_compute_type)
+                used_compute_type = attempt_compute_type
+                break
+            except RuntimeError as e:
+                if is_cuda_oom(e) and idx < len(compute_types) - 1:
+                    logger.warning("Job %s: CUDA OOM with compute_type=%s", job_id, attempt_compute_type)
+                    continue
+                raise
+
+        if segments_list is None or info is None:
+            raise RuntimeError("Transcription failed")
+    except Exception as e:
+        logger.exception("Job %s: transcription failed", job_id)
+        error_msg = str(e)
+        if is_cuda_oom(e):
+            error_msg = "CUDA OOM during transcription. Try compute_type=int8_float16 or a smaller model."
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            transcription_status="error",
+            error=error_msg,
+        ))
+        return
 
     detected = (info.language or "unk").lower()
     out_name = build_output_name(input_path, detected)
@@ -119,23 +345,95 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
         language_probability=float(info.language_probability or 0.0),
         output_name=out_name,
         output_path=str(out_path),
+        transcription_compute_type=used_compute_type,
     ))
 
     try:
         with out_path.open("w", encoding="utf-8") as f:
-            for i, seg in enumerate(segments, start=1):
+            for i, seg in enumerate(segments_list, start=1):
                 f.write(f"{i}\n")
-                f.write(f"{srt_time(seg.start)} --> {srt_time(seg.end)}\n")
-                f.write(seg.text.strip() + "\n\n")
+                f.write(f"{srt_time(seg['start'])} --> {srt_time(seg['end'])}\n")
+                f.write(seg["text"].strip() + "\n\n")
 
-                # progres: segment.end / duration
-                if duration and duration > 0:
-                    pct = max(0.0, min(99.0, (seg.end / duration) * 100.0))
-                    loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, progress=pct))
-
-        loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, progress=100.0, status="done"))
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            progress=100.0,
+            transcription_status="done",
+        ))
+        logger.info("Job %s: transcription done (lang=%s, output=%s)", job_id, detected, out_name)
     except Exception as e:
-        loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, status="error", error=str(e)))
+        logger.exception("Job %s: transcription write failed", job_id)
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            transcription_status="error",
+            error=str(e),
+        ))
+        return
+    if not translate_to:
+        logger.info("Job %s: translation skipped", job_id)
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, status="done"))
+        return
+
+    translate_to = translate_to.lower()
+    src_lang = NLLB_SRC_LANG.get(detected)
+    tgt_lang = NLLB_TGT_LANG.get(translate_to)
+    if not src_lang or not tgt_lang:
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            translation_status="error",
+            translation_error="Unsupported language for translation",
+        ))
+        return
+
+    translation_name = build_output_name_lang(input_path, translate_to)
+    translation_path = OUT_DIR / translation_name
+    translation_device = pick_translation_device()
+    loop.call_soon_threadsafe(asyncio.create_task, update_job(
+        job_id,
+        translation_status="loading_model",
+        translation_progress=0.0,
+        translation_output_name=translation_name,
+        translation_output_path=str(translation_path),
+        translation_language=translate_to,
+        translation_device=translation_device,
+    ))
+    logger.info("Job %s: translation start (%s -> %s)", job_id, detected, translate_to)
+
+    try:
+        translated_segments = translate_segments(
+            segments_list,
+            src_lang,
+            tgt_lang,
+            job_id,
+            loop,
+            translation_device,
+        )
+        with translation_path.open("w", encoding="utf-8") as f:
+            for i, seg in enumerate(translated_segments, start=1):
+                f.write(f"{i}\n")
+                f.write(f"{srt_time(seg['start'])} --> {srt_time(seg['end'])}\n")
+                f.write(seg["text"].strip() + "\n\n")
+
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            translation_status="done",
+            translation_progress=100.0,
+            status="done",
+        ))
+        logger.info("Job %s: translation done (output=%s)", job_id, translation_name)
+    except Exception as e:
+        logger.exception("Job %s: translation failed", job_id)
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            translation_status="error",
+            translation_error=str(e),
+        ))
+    finally:
+        if translation_device == "cuda":
+            release_translation_model("cuda")
 
 class StartJobRequest(BaseModel):
     path: str                  # relative to /work/in OR special "upload:<filename>"
@@ -144,6 +442,7 @@ class StartJobRequest(BaseModel):
     compute_type: str = "float16"
     vad: bool = True
     beam_size: int = 5
+    translate_to: Optional[str] = None
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
@@ -211,13 +510,22 @@ async def start_job(req: StartJobRequest):
         JOBS[job_id] = {
             "id": job_id,
             "status": "queued",
+            "transcription_status": "queued",
+            "translation_status": "pending" if req.translate_to else "skipped",
             "progress": 0.0,
+            "translation_progress": 0.0,
             "input": str(input_path),
             "display_input": display_path,
             "output_name": None,
+            "translation_output_name": None,
+            "translation_output_path": None,
+            "translation_language": req.translate_to,
+            "transcription_compute_type": req.compute_type,
+            "translation_device": None,
             "detected_language": None,
             "language_probability": None,
             "error": None,
+            "translation_error": None,
             "duration": None,
         }
 
@@ -233,7 +541,8 @@ async def start_job(req: StartJobRequest):
         req.device,
         req.compute_type,
         req.vad,
-        req.beam_size
+        req.beam_size,
+        req.translate_to,
     ))
 
     return {"job_id": job_id}
@@ -273,7 +582,8 @@ async def download_srt(job_id: str):
         job = JOBS.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] != "done" or not job.get("output_name"):
+    ready = job.get("transcription_status", job.get("status")) == "done"
+    if not ready or not job.get("output_name"):
         raise HTTPException(status_code=400, detail="SRT not ready")
 
     out_path = OUT_DIR / job["output_name"]
@@ -281,3 +591,18 @@ async def download_srt(job_id: str):
         raise HTTPException(status_code=404, detail="SRT file missing on disk")
 
     return FileResponse(str(out_path), filename=job["output_name"])
+
+@app.get("/api/jobs/{job_id}/srt-translated")
+async def download_srt_translated(job_id: str):
+    async with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("translation_status") != "done" or not job.get("translation_output_name"):
+        raise HTTPException(status_code=400, detail="Translated SRT not ready")
+
+    out_path = OUT_DIR / job["translation_output_name"]
+    if not out_path.exists():
+        raise HTTPException(status_code=404, detail="Translated SRT missing on disk")
+
+    return FileResponse(str(out_path), filename=job["translation_output_name"])

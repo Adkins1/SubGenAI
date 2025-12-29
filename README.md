@@ -1,10 +1,11 @@
 # fw-web
 
 ## Opis
-Aplikacja web do lokalnej transkrypcji wideo/audio i generowania napisow SRT w kontenerze GPU. Wejscie pochodzi z /work/in (mount z hosta) lub z uploadu do kontenera. Wyniki trafiaja do /work/out.
+Aplikacja web do lokalnej transkrypcji wideo/audio i generowania napisow SRT w kontenerze GPU, z opcjonalnym tlumaczeniem na polski w tym samym procesie. Wejscie pochodzi z /work/in (mount z hosta) lub z uploadu do kontenera. Wyniki trafiaja do /work/out.
 
 ## Najwazniejsze biblioteki
 - faster-whisper (ASR)
+- transformers + torch (tlumaczenie NLLB)
 - FastAPI (API)
 - Uvicorn (serwer ASGI)
 - python-multipart (upload plikow)
@@ -15,7 +16,8 @@ Aplikacja web do lokalnej transkrypcji wideo/audio i generowania napisow SRT w k
 - Upload: opcjonalny, zapisuje plik do /work/uploads w kontenerze.
 - Start transkrypcji: wysyla job do API, UI pokazuje pasek postepu, status i timer.
 - Wykryty jezyk i nazwa wyjsciowego SRT pojawiaja sie w trakcie.
-- Po zakonczeniu widoczny jest link do pobrania SRT.
+- Tlumaczenie: wybor jezyka (na razie tylko polski) i status tlumaczenia w toku.
+- Po zakonczeniu widoczne sa linki do pobrania SRT oryginalnego i tlumaczonego.
 
 ## Uruchomienie
 1. Ustaw FILES_DIR w .env (sciezka na hoscie do plikow z wideo/audio).

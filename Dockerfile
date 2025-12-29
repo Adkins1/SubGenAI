@@ -1,4 +1,5 @@
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+ARG CUDA_BASE=nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+FROM ${CUDA_BASE}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -10,12 +11,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN python3 -m pip install -U pip setuptools wheel
 
+# PyTorch (CUDA) for translation on GPU
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+ARG TORCH_VERSION=
+RUN if [ -n "$TORCH_VERSION" ]; then \
+      pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} torch==${TORCH_VERSION}; \
+    else \
+      pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} torch; \
+    fi
+
 # ASR + API + upload
 RUN pip install --no-cache-dir \
       faster-whisper==1.2.1 \
       fastapi==0.115.6 \
       "uvicorn[standard]==0.32.1" \
-      python-multipart==0.0.20
+      python-multipart==0.0.20 \
+      transformers==4.46.2 \
+      sentencepiece==0.2.0
 
 WORKDIR /app
 COPY app /app
