@@ -1,0 +1,21 @@
+services:
+  fw-web:
+    build: .
+    container_name: fw-web
+    ports:
+      - "8000:8000"
+    gpus: all
+    environment:
+      - HF_HOME=/hf
+    volumes:
+      # ZMIEN TO NA SWOJ FOLDER Z PLIKAMI (moze miec spacje) -> ustaw w .env: ANIME_DIR
+      - "${FILES_DIR}:/work/in:ro"
+
+      # output na hosta (w tym folderze projektu utworz ./out)
+      - "./out:/work/out"
+
+      # cache modeli HF
+      - "fw-hf-cache:/hf"
+
+volumes:
+  fw-hf-cache:

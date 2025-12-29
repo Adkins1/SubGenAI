@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>faster-whisper Web</title>
+  <style>
+    :root{
+      --bg1:#0b1020;
+      --bg2:#0a2a3a;
+      --card: rgba(255,255,255,0.06);
+      --card2: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.12);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.68);
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --radius: 16px;
+      --ok: #45d483;
+      --warn: #ffcc66;
+      --err: #ff5c7a;
+      --btn: rgba(255,255,255,0.10);
+      --btnHover: rgba(255,255,255,0.16);
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, Segoe UI, Arial;
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 15% 0%, #172a63 0%, transparent 55%),
+                  radial-gradient(900px 500px at 85% 10%, #0f6b7a 0%, transparent 50%),
+                  linear-gradient(135deg, var(--bg1), var(--bg2));
+      min-height:100vh;
+    }
+
+    .wrap{
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 22px 22px 40px;
+    }
+
+    header{
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:16px;
+    }
+
+    h1{
+      font-size: 22px;
+      margin:0;
+      letter-spacing: 0.2px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+
+    .pill{
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.10);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .subtitle{
+      margin:8px 0 0;
+      color: var(--muted);
+      line-height: 1.45;
+      max-width: 900px;
+      font-size: 13.5px;
+    }
+
+    .row{
+      display:flex;
+      gap:16px;
+      flex-wrap:wrap;
+      align-items:stretch;
+    }
+
+    .card{
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      flex: 1;
+      min-width: 340px;
+    }
+
+    .card h3{
+      margin:0 0 12px;
+      font-size: 15px;
+      letter-spacing: .2px;
+      color: rgba(255,255,255,0.94);
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+
+    .hint{
+      font-size: 12.5px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+
+    .toolbar{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      margin-bottom: 10px;
+    }
+
+    button{
+      padding: 10px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--btn);
+      color: var(--text);
+      cursor: pointer;
+      transition: .15s ease;
+      font-weight: 600;
+      letter-spacing: .2px;
+    }
+    button:hover{ background: var(--btnHover); transform: translateY(-1px); }
+    button:active{ transform: translateY(0px); }
+    button:disabled{ opacity:.5; cursor:not-allowed; transform:none; }
+
+    .primary{
+      background: rgba(69,212,131,0.14);
+      border-color: rgba(69,212,131,0.35);
+    }
+    .primary:hover{ background: rgba(69,212,131,0.22); }
+
+    .danger{
+      background: rgba(255,92,122,0.12);
+      border-color: rgba(255,92,122,0.35);
+    }
+
+    input[type=file]{
+      width:100%;
+      padding: 10px;
+      background: rgba(255,255,255,0.06);
+      border: 1px dashed rgba(255,255,255,0.20);
+      border-radius: 12px;
+      color: var(--muted);
+    }
+
+    select{
+      width:100%;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(0,0,0,0.22);
+      color: rgba(255,255,255,0.92);
+      outline: none;
+    }
+    select:focus{ border-color: rgba(69,212,131,0.45); box-shadow: 0 0 0 3px rgba(69,212,131,0.12); }
+
+    .mono{
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12.5px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      color: rgba(255,255,255,0.90);
+      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .grid2{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 980px){
+      .grid2{ grid-template-columns: 1fr; }
+    }
+
+    .bar{
+      height: 14px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.20);
+    }
+    .bar > div{
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(69,212,131,0.9), rgba(130,222,255,0.75));
+      transition: width .25s ease;
+    }
+
+    .statusRow{
+      display:flex;
+      gap: 12px;
+      align-items:center;
+      justify-content:space-between;
+      flex-wrap:wrap;
+      margin-top: 10px;
+    }
+
+    .badge{
+      font-size: 12px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.08);
+      color: rgba(255,255,255,0.86);
+      display:inline-flex;
+      gap: 8px;
+      align-items:center;
+    }
+
+    .badge strong{ font-weight: 700; }
+
+    a{
+      color: rgba(130,222,255,0.95);
+      text-decoration: none;
+      font-weight: 650;
+    }
+    a:hover{ text-decoration: underline; }
+
+    .splitHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      flex-wrap:wrap;
+    }
+
+    .rightMini{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .small{
+      font-size: 12px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>faster-whisper (GPU) <span class="pill">local</span></h1>
+        <p class="subtitle">
+          Wybierz plik z podpiętego katalogu <code>/work/in</code> albo wgraj plik.
+          Dostaniesz SRT jako <code>nazwa.&lt;język&gt;.srt</code> (np. <code>.jp.srt</code> dla japońskiego).
+        </p>
+      </div>
+      <div class="rightMini">
+        <span class="badge">⏱️ czas: <strong id="timer">00:00</strong></span>
+        <span class="pill">model: large-v3</span>
+      </div>
+    </header>
+
+    <div class="row">
+      <div class="card">
+        <div class="splitHeader">
+          <h3>1) Wybór pliku z /work/in</h3>
+          <div class="toolbar">
+            <button onclick="refreshFiles()">Odśwież listę</button>
+          </div>
+        </div>
+        <select id="fileSelect" size="12"></select>
+        <div class="hint">
+          Jeśli lista pusta: sprawdź volume w <code>docker-compose.yml</code> (np. <code>Z:/Media → /work/in</code>).
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>2) (Opcjonalnie) Upload pliku <span class="pill">wgrywa do kontenera</span></h3>
+        <input id="fileUpload" type="file" />
+        <p style="margin:12px 0 0;">
+          <button class="primary" onclick="uploadFile()">Wyślij do serwera</button>
+        </p>
+        <div style="margin-top:12px" class="mono" id="uploadInfo">-</div>
+        <div class="hint">
+          Przy dużych MKV lepiej wybierać z listy (bez uploadu).
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <div class="splitHeader">
+        <h3>Start</h3>
+        <div class="small" id="metaLine">-</div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <div>
+          <div class="small" style="margin-bottom:6px;">Wybrany plik</div>
+          <div class="mono" id="selectedFile">-</div>
+        </div>
+        <div>
+          <div class="small" style="margin-bottom:6px;">Docelowy SRT</div>
+          <div class="mono" id="outputName">-</div>
+        </div>
+      </div>
+
+      <div class="toolbar" style="margin-top:14px;">
+        <button id="startBtn" class="primary" onclick="startJob()">Start transkrypcji</button>
+        <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset</button>
+        <a id="downloadLink" href="#" style="display:none;">Pobierz SRT</a>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div class="bar"><div id="barFill"></div></div>
+        <div class="statusRow">
+          <span class="badge" id="statusBadge">status: <strong>-</strong></span>
+          <span class="badge" id="langBadge" style="display:none;">lang: <strong>-</strong></span>
+          <span class="badge">progress: <strong id="progressText">0.0%</strong></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let uploadedServerPath = null;
+let currentJobId = null;
+let es = null;
+
+// timer
+let timerStartMs = null;
+let timerInterval = null;
+
+function pad2(n){ return String(n).padStart(2, "0"); }
+function fmtElapsed(ms){
+  const totalSec = Math.floor(ms/1000);
+  const m = Math.floor(totalSec/60);
+  const s = totalSec % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+function resetTimer(){
+  stopTimer();
+  document.getElementById("timer").textContent = "00:00";
+  timerStartMs = null;
+}
+function startTimer(){
+  resetTimer();
+  timerStartMs = Date.now();
+  timerInterval = setInterval(() => {
+    document.getElementById("timer").textContent = fmtElapsed(Date.now() - timerStartMs);
+  }, 250);
+}
+function stopTimer(){
+  if(timerInterval){
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function setProgress(pct){
+  const fill = document.getElementById("barFill");
+  fill.style.width = `${pct}%`;
+  document.getElementById("progressText").textContent = `${pct.toFixed(1)}%`;
+}
+
+function setStatus(text){
+  const b = document.getElementById("statusBadge");
+  b.innerHTML = `status: <strong>${text}</strong>`;
+}
+
+async function refreshFiles(){
+  const res = await fetch("/api/files");
+  const data = await res.json();
+  const sel = document.getElementById("fileSelect");
+  sel.innerHTML = "";
+  for(const f of data.files){
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f;
+    sel.appendChild(opt);
+  }
+}
+refreshFiles();
+
+document.getElementById("fileSelect").addEventListener("change", () => {
+  uploadedServerPath = null; // jeśli wybierasz z listy, kasujemy upload
+  const v = document.getElementById("fileSelect").value;
+  document.getElementById("selectedFile").textContent = v || "-";
+  document.getElementById("metaLine").textContent = v ? "źródło: /work/in (mount)" : "-";
+});
+
+function resetUi(){
+  if(es) es.close();
+  es = null;
+  currentJobId = null;
+
+  document.getElementById("outputName").textContent = "-";
+  document.getElementById("downloadLink").style.display = "none";
+  document.getElementById("downloadLink").href = "#";
+  document.getElementById("langBadge").style.display = "none";
+  document.getElementById("langBadge").innerHTML = "lang: <strong>-</strong>";
+  document.getElementById("resetBtn").disabled = true;
+
+  setProgress(0);
+  setStatus("-");
+  resetTimer();
+
+  document.getElementById("startBtn").disabled = false;
+}
+
+async function uploadFile(){
+  const fi = document.getElementById("fileUpload");
+  const info = document.getElementById("uploadInfo");
+  if(!fi.files || fi.files.length === 0){
+    info.textContent = "Wybierz plik.";
+    return;
+  }
+  const f = fi.files[0];
+  info.textContent = "Wysyłam...";
+  const fd = new FormData();
+  fd.append("file", f);
+  const res = await fetch("/api/upload", { method:"POST", body: fd });
+  const data = await res.json();
+  if(!res.ok){
+    info.textContent = "Błąd: " + (data.detail || res.statusText);
+    return;
+  }
+  uploadedServerPath = data.server_path;
+  document.getElementById("selectedFile").textContent = uploadedServerPath;
+  document.getElementById("metaLine").textContent = "źródło: upload (w kontenerze)";
+  info.textContent = "OK. Server path: " + uploadedServerPath;
+}
+
+async function startJob(){
+  const fromList = document.getElementById("fileSelect").value;
+  const path = uploadedServerPath || fromList;
+  if(!path){
+    alert("Wybierz plik z listy albo wgraj plik.");
+    return;
+  }
+
+  // reset UI + timer
+  setProgress(0);
+  document.getElementById("outputName").textContent = "-";
+  document.getElementById("downloadLink").style.display = "none";
+  document.getElementById("downloadLink").href = "#";
+  document.getElementById("langBadge").style.display = "none";
+  document.getElementById("resetBtn").disabled = false;
+
+  setStatus("wysyłam job...");
+  document.getElementById("startBtn").disabled = true;
+
+  startTimer();
+
+  const payload = {
+    path,
+    model: "large-v3",
+    device: "cuda",
+    compute_type: "float16",
+    vad: true,
+    beam_size: 5
+  };
+
+  const res = await fetch("/api/jobs", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if(!res.ok){
+    setStatus("błąd");
+    stopTimer();
+    document.getElementById("startBtn").disabled = false;
+    alert(data.detail || res.statusText);
+    return;
+  }
+
+  currentJobId = data.job_id;
+  listenJob(currentJobId);
+}
+
+function listenJob(jobId){
+  if(es) es.close();
+  es = new EventSource(`/api/jobs/${jobId}/events`);
+
+  es.onmessage = (ev) => {
+    const job = JSON.parse(ev.data);
+
+    setStatus(job.status || "-");
+    setProgress(job.progress || 0);
+
+    if(job.output_name){
+      document.getElementById("outputName").textContent = job.output_name;
+    }
+
+    if(job.detected_language){
+      const lb = document.getElementById("langBadge");
+      lb.style.display = "inline-flex";
+      lb.innerHTML = `lang: <strong>${job.detected_language}</strong> <span class="small">(${(job.language_probability||0).toFixed(3)})</span>`;
+    }
+
+    if(job.status === "done"){
+      stopTimer();
+      const a = document.getElementById("downloadLink");
+      a.href = `/api/jobs/${jobId}/srt`;
+      a.style.display = "inline";
+      document.getElementById("startBtn").disabled = false;
+      es.close();
+    }
+
+    if(job.status === "error"){
+      stopTimer();
+      document.getElementById("startBtn").disabled = false;
+      es.close();
+      alert(job.error || "Unknown error");
+    }
+  };
+
+  es.onerror = () => {
+    // SSE może czasem się rozłączyć; zostawiamy prosto.
+  };
+}
+</script>
+</body>
+</html>
