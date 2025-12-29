@@ -34,6 +34,7 @@ logger = logging.getLogger("fw-web")
 LANG_ALIAS = {
     "ja": "jp",
 }
+LANG_ALIAS_REV = {v: k for k, v in LANG_ALIAS.items()}
 
 MEDIA_EXT = {".mkv", ".mp4", ".avi", ".mov", ".mp3", ".wav", ".m4a", ".flac", ".webm"}
 
@@ -55,6 +56,7 @@ NLLB_SRC_LANG = {
 NLLB_TGT_LANG = {
     "pl": "pol_Latn",
 }
+KNOWN_LANG_TAGS = set(LANG_ALIAS.keys()) | set(LANG_ALIAS.values()) | set(NLLB_SRC_LANG.keys()) | set(NLLB_TGT_LANG.keys())
 
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = asyncio.Lock()
@@ -64,6 +66,12 @@ MODEL_LOCK = asyncio.Lock()
 
 TRANSLATION_MODEL_CACHE: Dict[str, Dict[str, Any]] = {}
 TRANSLATION_MODEL_LOCK = threading.Lock()
+
+JOB_CANCEL_EVENTS: Dict[str, threading.Event] = {}
+JOB_CANCEL_LOCK = threading.Lock()
+
+class JobCancelled(Exception):
+    pass
 
 def safe_relpath(p: str) -> str:
     # blokujemy path traversal
@@ -110,6 +118,20 @@ async def update_job(job_id: str, **fields):
         if job_id not in JOBS:
             return
         JOBS[job_id].update(fields)
+
+def create_cancel_event(job_id: str) -> threading.Event:
+    ev = threading.Event()
+    with JOB_CANCEL_LOCK:
+        JOB_CANCEL_EVENTS[job_id] = ev
+    return ev
+
+def get_cancel_event(job_id: str) -> Optional[threading.Event]:
+    with JOB_CANCEL_LOCK:
+        return JOB_CANCEL_EVENTS.get(job_id)
+
+def clear_cancel_event(job_id: str):
+    with JOB_CANCEL_LOCK:
+        JOB_CANCEL_EVENTS.pop(job_id, None)
 
 def cleanup_cuda_memory():
     try:
@@ -158,6 +180,60 @@ def build_output_name(input_path: Path, detected_lang: str) -> str:
 def build_output_name_lang(input_path: Path, lang_tag: str) -> str:
     return f"{input_path.stem}.{lang_tag}.srt"
 
+def parse_srt_time(ts: str) -> float:
+    h, m, rest = ts.split(":")
+    s, ms = rest.split(",")
+    return int(h) * 3600 + int(m) * 60 + int(s) + (int(ms) / 1000.0)
+
+def parse_srt(path: Path):
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    segments = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if line.isdigit():
+            i += 1
+            if i >= len(lines):
+                break
+            line = lines[i].strip()
+        if "-->" not in line:
+            i += 1
+            continue
+        start_str, end_str = [p.strip() for p in line.split("-->", 1)]
+        try:
+            start = parse_srt_time(start_str)
+            end = parse_srt_time(end_str)
+        except Exception:
+            i += 1
+            continue
+        i += 1
+        text_lines = []
+        while i < len(lines) and lines[i].strip():
+            text_lines.append(lines[i].rstrip())
+            i += 1
+        text_joined = " ".join(t.strip() for t in text_lines if t.strip())
+        segments.append({"start": start, "end": end, "text": text_joined})
+    return segments
+
+def infer_lang_from_srt_path(path: Path) -> Optional[str]:
+    parts = path.stem.split(".")
+    if len(parts) < 2:
+        return None
+    candidate = parts[-1].lower()
+    candidate = LANG_ALIAS_REV.get(candidate, candidate)
+    return candidate if candidate in NLLB_SRC_LANG else None
+
+def build_translation_output_name(srt_path: Path, lang_tag: str) -> str:
+    base = srt_path.stem
+    parts = base.split(".")
+    if len(parts) > 1 and parts[-1].lower() in KNOWN_LANG_TAGS:
+        base = ".".join(parts[:-1])
+    return f"{base}.{lang_tag}.srt"
+
 def get_translation_model(device: str):
     import torch
     from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
@@ -191,7 +267,8 @@ def release_translation_model(device: str):
         finally:
             cleanup_cuda_memory()
 
-def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop, device: str):
+def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop, device: str,
+                       cancel_event: Optional[threading.Event]):
     import torch
 
     if device == "cuda":
@@ -217,6 +294,8 @@ def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop
     translated = []
     total = len(segments)
     for idx, seg in enumerate(segments, start=1):
+        if cancel_event and cancel_event.is_set():
+            raise JobCancelled("Translation cancelled")
         text = seg["text"].strip()
         if text:
             inputs = tokenizer(text, return_tensors="pt", truncation=True)
@@ -246,8 +325,7 @@ def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop
     return translated
 
 def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str, device: str,
-                          compute_type: str, vad: bool, beam_size: int,
-                          translate_to: Optional[str]):
+                          compute_type: str, vad: bool, beam_size: int):
     duration = get_duration_seconds(input_path)
 
     logger.info("Job %s: start transcription (%s)", job_id, input_path)
@@ -258,6 +336,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
         progress=0.0,
         duration=duration,
     ))
+    cancel_event = get_cancel_event(job_id)
 
     # load model (sync stworzymy przez async getter w innym kroku - pro'ciej: osobno)
     # tu model przekazujemy inaczej, ale zostawiamy w atkiem: model bedzie w cache w async.
@@ -268,6 +347,8 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
         logger.info("Job %s: loading whisper model (compute_type=%s)", job_id, attempt_compute_type)
         model = WhisperModel(model_name, device=device, compute_type=attempt_compute_type)
         try:
+            if cancel_event and cancel_event.is_set():
+                raise JobCancelled("Transcription cancelled")
             segments, info = model.transcribe(
                 str(input_path),
                 language=None,          # auto detect
@@ -278,6 +359,8 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
 
             segments_list = []
             for seg in segments:
+                if cancel_event and cancel_event.is_set():
+                    raise JobCancelled("Transcription cancelled")
                 segments_list.append({
                     "start": seg.start,
                     "end": seg.end,
@@ -326,6 +409,15 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
 
         if segments_list is None or info is None:
             raise RuntimeError("Transcription failed")
+    except JobCancelled:
+        logger.info("Job %s: transcription cancelled", job_id)
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="cancelled",
+            transcription_status="cancelled",
+        ))
+        clear_cancel_event(job_id)
+        return
     except Exception as e:
         logger.exception("Job %s: transcription failed", job_id)
         error_msg = str(e)
@@ -337,6 +429,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             transcription_status="error",
             error=error_msg,
         ))
+        clear_cancel_event(job_id)
         return
 
     detected = (info.language or "unk").lower()
@@ -363,6 +456,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             job_id,
             progress=100.0,
             transcription_status="done",
+            status="done",
         ))
         logger.info("Job %s: transcription done (lang=%s, output=%s)", job_id, detected, out_name)
     except Exception as e:
@@ -373,14 +467,64 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             transcription_status="error",
             error=str(e),
         ))
+        clear_cancel_event(job_id)
         return
-    if not translate_to:
-        logger.info("Job %s: translation skipped", job_id)
-        loop.call_soon_threadsafe(asyncio.create_task, update_job(job_id, status="done"))
+    clear_cancel_event(job_id)
+
+def run_translation_sync(loop, job_id: str, srt_path: Path, translate_to: str):
+    translate_to = translate_to.lower()
+    cancel_event = get_cancel_event(job_id)
+
+    loop.call_soon_threadsafe(asyncio.create_task, update_job(
+        job_id,
+        status="running",
+        translation_status="loading_srt",
+        translation_progress=0.0,
+    ))
+
+    try:
+        segments_list = parse_srt(srt_path)
+    except Exception as e:
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            translation_status="error",
+            translation_error=f"Failed to parse SRT: {e}",
+        ))
+        clear_cancel_event(job_id)
         return
 
-    translate_to = translate_to.lower()
-    src_lang = NLLB_SRC_LANG.get(detected)
+    if cancel_event and cancel_event.is_set():
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="cancelled",
+            translation_status="cancelled",
+        ))
+        clear_cancel_event(job_id)
+        return
+
+    if not segments_list:
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            translation_status="error",
+            translation_error="No segments found in SRT",
+        ))
+        clear_cancel_event(job_id)
+        return
+
+    src_lang_key = infer_lang_from_srt_path(srt_path)
+    if not src_lang_key:
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="error",
+            translation_status="error",
+            translation_error="Cannot infer source language from SRT filename",
+        ))
+        clear_cancel_event(job_id)
+        return
+
+    src_lang = NLLB_SRC_LANG.get(src_lang_key)
     tgt_lang = NLLB_TGT_LANG.get(translate_to)
     if not src_lang or not tgt_lang:
         loop.call_soon_threadsafe(asyncio.create_task, update_job(
@@ -389,9 +533,10 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             translation_status="error",
             translation_error="Unsupported language for translation",
         ))
+        clear_cancel_event(job_id)
         return
 
-    translation_name = build_output_name_lang(input_path, translate_to)
+    translation_name = build_translation_output_name(srt_path, translate_to)
     translation_path = OUT_DIR / translation_name
     translation_device = pick_translation_device()
     loop.call_soon_threadsafe(asyncio.create_task, update_job(
@@ -406,7 +551,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
     logger.info(
         "Job %s: translation start (%s -> %s, device=%s)",
         job_id,
-        detected,
+        src_lang_key,
         translate_to,
         translation_device,
     )
@@ -419,6 +564,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             job_id,
             loop,
             translation_device,
+            cancel_event,
         )
         with translation_path.open("w", encoding="utf-8") as f:
             for i, seg in enumerate(translated_segments, start=1):
@@ -433,6 +579,13 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
             status="done",
         ))
         logger.info("Job %s: translation done (output=%s)", job_id, translation_name)
+    except JobCancelled:
+        loop.call_soon_threadsafe(asyncio.create_task, update_job(
+            job_id,
+            status="cancelled",
+            translation_status="cancelled",
+        ))
+        logger.info("Job %s: translation cancelled", job_id)
     except Exception as e:
         logger.exception("Job %s: translation failed", job_id)
         loop.call_soon_threadsafe(asyncio.create_task, update_job(
@@ -444,15 +597,18 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
     finally:
         if translation_device == "cuda":
             release_translation_model("cuda")
-
-class StartJobRequest(BaseModel):
+        clear_cancel_event(job_id)
+class StartTranscriptionRequest(BaseModel):
     path: str                  # relative to /work/in OR special "upload:<filename>"
     model: str = "large-v3"
     device: str = "cuda"
     compute_type: str = "float16"
     vad: bool = True
     beam_size: int = 5
-    translate_to: Optional[str] = None
+
+class StartTranslationRequest(BaseModel):
+    srt_path: str              # relative to /work/out, prefixed with "out:"
+    translate_to: str = "pl"
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
@@ -477,6 +633,17 @@ def list_files():
     files.sort()
     return {"files": files}
 
+@app.get("/api/srt-files")
+def list_srt_files():
+    files = []
+    if OUT_DIR.exists():
+        for p in OUT_DIR.rglob("*.srt"):
+            if p.is_file():
+                rel = p.relative_to(OUT_DIR).as_posix()
+                files.append(f"out:{rel}")
+    files.sort()
+    return {"files": files}
+
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
     suffix = Path(file.filename).suffix.lower()
@@ -496,7 +663,7 @@ async def upload(file: UploadFile = File(...)):
     return {"uploaded": True, "server_path": f"upload:{safe_name}"}
 
 @app.post("/api/jobs")
-async def start_job(req: StartJobRequest):
+async def start_transcription(req: StartTranscriptionRequest):
     job_id = uuid.uuid4().hex
 
     # resolve input path
@@ -516,26 +683,22 @@ async def start_job(req: StartJobRequest):
         raise HTTPException(status_code=404, detail=f"File not found: {display_path}")
 
     # init job state
+    create_cancel_event(job_id)
     async with JOBS_LOCK:
         JOBS[job_id] = {
             "id": job_id,
+            "type": "transcription",
             "status": "queued",
             "transcription_status": "queued",
-            "translation_status": "pending" if req.translate_to else "skipped",
+            "translation_status": "skipped",
             "progress": 0.0,
-            "translation_progress": 0.0,
             "input": str(input_path),
             "display_input": display_path,
             "output_name": None,
-            "translation_output_name": None,
-            "translation_output_path": None,
-            "translation_language": req.translate_to,
             "transcription_compute_type": req.compute_type,
-            "translation_device": None,
             "detected_language": None,
             "language_probability": None,
             "error": None,
-            "translation_error": None,
             "duration": None,
         }
 
@@ -552,9 +715,52 @@ async def start_job(req: StartJobRequest):
         req.compute_type,
         req.vad,
         req.beam_size,
-        req.translate_to,
     ))
 
+    return {"job_id": job_id}
+
+@app.post("/api/translations")
+async def start_translation(req: StartTranslationRequest):
+    job_id = uuid.uuid4().hex
+    if not req.srt_path.startswith("out:"):
+        raise HTTPException(status_code=400, detail="Invalid SRT path")
+    try:
+        rel = safe_relpath(req.srt_path.split("out:", 1)[1])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid SRT path")
+    input_path = OUT_DIR / rel
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail=f"SRT not found: {rel}")
+    if input_path.suffix.lower() != ".srt":
+        raise HTTPException(status_code=400, detail="Selected file is not an SRT")
+
+    create_cancel_event(job_id)
+    async with JOBS_LOCK:
+        JOBS[job_id] = {
+            "id": job_id,
+            "type": "translation",
+            "status": "queued",
+            "transcription_status": "skipped",
+            "translation_status": "queued",
+            "progress": 0.0,
+            "translation_progress": 0.0,
+            "input": str(input_path),
+            "display_input": f"out:{rel}",
+            "translation_output_name": None,
+            "translation_output_path": None,
+            "translation_language": req.translate_to,
+            "translation_device": None,
+            "translation_error": None,
+        }
+
+    loop = asyncio.get_running_loop()
+    asyncio.create_task(asyncio.to_thread(
+        run_translation_sync,
+        loop,
+        job_id,
+        input_path,
+        req.translate_to,
+    ))
     return {"job_id": job_id}
 
 @app.get("/api/jobs/{job_id}")
@@ -579,12 +785,31 @@ async def job_events(job_id: str):
             payload = json.dumps(job, ensure_ascii=False)
             yield f"data: {payload}\n\n"
 
-            if job["status"] in ("done", "error"):
+            if job["status"] in ("done", "error", "cancelled"):
                 return
 
             await asyncio.sleep(0.5)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+@app.post("/api/jobs/{job_id}/stop")
+async def stop_job(job_id: str):
+    async with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    ev = get_cancel_event(job_id)
+    if ev:
+        ev.set()
+
+    fields = {"status": "cancelling"}
+    if job.get("type") == "translation":
+        fields["translation_status"] = "stopping"
+    else:
+        fields["transcription_status"] = "stopping"
+    await update_job(job_id, **fields)
+    return {"stopping": True}
 
 @app.get("/api/jobs/{job_id}/srt")
 async def download_srt(job_id: str):

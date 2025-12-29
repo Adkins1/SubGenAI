@@ -302,14 +302,14 @@
     <div class="row">
       <div class="card">
         <div class="splitHeader">
-          <h3>1) Wybór pliku z /work/in</h3>
+          <h3>1) Wybor pliku z /work/in</h3>
           <div class="toolbar">
-            <button onclick="refreshFiles()">Odśwież listę</button>
+            <button onclick="refreshFiles()">Odswiez liste</button>
           </div>
         </div>
         <select id="fileSelect" size="12"></select>
         <div class="hint">
-          Jeśli lista pusta: sprawdź volume w <code>docker-compose.yml</code> (np. <code>Z:/Media → /work/in</code>).
+          Jesli lista pusta: sprawdz volume w <code>docker-compose.yml</code> (np. <code>Z:/Media -> /work/in</code>).
         </div>
       </div>
 
@@ -317,11 +317,11 @@
         <h3>2) (Opcjonalnie) Upload pliku <span class="pill">wgrywa do kontenera</span></h3>
         <input id="fileUpload" type="file" />
         <p style="margin:12px 0 0;">
-          <button class="primary" onclick="uploadFile()">Wyślij do serwera</button>
+          <button class="primary" onclick="uploadFile()">Wyslij do serwera</button>
         </p>
         <div style="margin-top:12px" class="mono" id="uploadInfo">-</div>
         <div class="hint">
-          Przy dużych MKV lepiej wybierać z listy (bez uploadu).
+          Przy duzych MKV lepiej wybierac z listy (bez uploadu).
         </div>
       </div>
     </div>
@@ -345,6 +345,14 @@
         </div>
       </div>
 
+      <div style="margin-top:10px;">
+        <div class="small" style="margin-bottom:6px;">Plik SRT do tlumaczenia (z /work/out)</div>
+        <select id="srtSelect" size="8"></select>
+        <div class="toolbar" style="margin-top:8px;">
+          <button onclick="refreshSrtFiles()">Odswiez liste SRT</button>
+        </div>
+      </div>
+
       <div class="grid2" style="margin-top:10px;">
         <div>
           <div class="small" style="margin-bottom:6px;">SRT oryginalny</div>
@@ -357,8 +365,10 @@
       </div>
 
       <div class="toolbar" style="margin-top:14px;">
-        <button id="startBtn" class="primary" onclick="startJob()">Start transkrypcji</button>
-        <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset</button>
+        <button id="startTranscribeBtn" class="primary" onclick="startTranscription()">Start transkrypcji</button>
+        <button id="startTranslateBtn" class="primary" onclick="startTranslation()">Start tlumaczenia</button>
+        <button id="stopBtn" class="danger" onclick="stopCurrentJob()" disabled>Stop</button>
+        <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset Timerow</button>
         <a id="downloadLinkOriginal" href="#" style="display:none;">Pobierz SRT (oryginal)</a>
         <a id="downloadLinkTranslated" href="#" style="display:none;">Pobierz SRT (pl)</a>
       </div>
@@ -381,7 +391,8 @@
         </div>
 
         <table class="statusTable">
-          <tr><th>Czas</th><td id="timer">00:00</td></tr>
+          <tr><th>Czas (transkrypcja)</th><td id="timerTranscription">00:00</td></tr>
+          <tr><th>Czas (tlumaczenie)</th><td id="timerTranslation">00:00</td></tr>
           <tr><th>Model</th><td id="modelCell">large-v3</td></tr>
           <tr><th>Transkrypcja</th><td id="transcriptionStatusCell">-</td></tr>
           <tr><th>Tlumaczenie</th><td id="translationStatusCell">-</td></tr>
@@ -391,15 +402,22 @@
       </div>
     </div>
   </div>
-
 <script>
 let uploadedServerPath = null;
-let currentJobId = null;
-let es = null;
+let transcriptionJobId = null;
+let translationJobId = null;
+let transcribeEs = null;
+let translateEs = null;
 
-// timer
-let timerStartMs = null;
-let timerInterval = null;
+let transcriptionPct = 0;
+let translationPct = 0;
+let transcriptionStatus = "-";
+let translationStatus = "-";
+
+const timers = {
+  transcription: { startMs: null, interval: null, cellId: "timerTranscription" },
+  translation: { startMs: null, interval: null, cellId: "timerTranslation" }
+};
 
 function pad2(n){ return String(n).padStart(2, "0"); }
 function fmtElapsed(ms){
@@ -408,51 +426,64 @@ function fmtElapsed(ms){
   const s = totalSec % 60;
   return `${pad2(m)}:${pad2(s)}`;
 }
-function resetTimer(){
-  stopTimer();
-  document.getElementById("timer").textContent = "00:00";
-  timerStartMs = null;
+
+function resetTimer(kind){
+  stopTimer(kind);
+  document.getElementById(timers[kind].cellId).textContent = "00:00";
+  timers[kind].startMs = null;
 }
-function startTimer(){
-  resetTimer();
-  timerStartMs = Date.now();
-  timerInterval = setInterval(() => {
-    document.getElementById("timer").textContent = fmtElapsed(Date.now() - timerStartMs);
+
+function startTimer(kind){
+  resetTimer(kind);
+  timers[kind].startMs = Date.now();
+  timers[kind].interval = setInterval(() => {
+    const elapsed = Date.now() - timers[kind].startMs;
+    document.getElementById(timers[kind].cellId).textContent = fmtElapsed(elapsed);
   }, 250);
 }
-function stopTimer(){
-  if(timerInterval){
-    clearInterval(timerInterval);
-    timerInterval = null;
+
+function stopTimer(kind){
+  const t = timers[kind];
+  if(t.interval){
+    clearInterval(t.interval);
+    t.interval = null;
   }
 }
 
+function resetTimers(){
+  resetTimer("transcription");
+  resetTimer("translation");
+}
+
 function setTranscriptionProgress(pct){
+  transcriptionPct = pct || 0;
   const fill = document.getElementById("barFillTranscription");
-  fill.style.width = `${pct}%`;
-  document.getElementById("transcriptionPct").textContent = `${pct.toFixed(1)}%`;
+  fill.style.width = `${transcriptionPct}%`;
+  document.getElementById("transcriptionPct").textContent = `${transcriptionPct.toFixed(1)}%`;
 }
 
 function setTranslationProgress(pct){
+  translationPct = pct || 0;
   const fill = document.getElementById("barFillTranslation");
-  fill.style.width = `${pct}%`;
-  document.getElementById("translationPct").textContent = `${pct.toFixed(1)}%`;
+  fill.style.width = `${translationPct}%`;
+  document.getElementById("translationPct").textContent = `${translationPct.toFixed(1)}%`;
 }
 
-function setProgressText(transcriptionPct, translationPct, translationStatus){
-  let text = `${transcriptionPct.toFixed(1)}%`;
-  if(translationStatus && translationStatus !== "skipped"){
-    text = `transkrypcja ${transcriptionPct.toFixed(1)}%, tlumaczenie ${translationPct.toFixed(1)}%`;
+function setProgressText(transcribePct, translatePct, translateStatus){
+  let text = `${transcribePct.toFixed(1)}%`;
+  if(translateStatus && translateStatus !== "skipped"){
+    text = `transkrypcja ${transcribePct.toFixed(1)}%, tlumaczenie ${translatePct.toFixed(1)}%`;
   }
   document.getElementById("progressText").textContent = text;
 }
 
 function setTranscriptionStatus(text){
-  const cell = document.getElementById("transcriptionStatusCell");
-  cell.textContent = text || "-";
+  transcriptionStatus = text || "-";
+  document.getElementById("transcriptionStatusCell").textContent = transcriptionStatus;
 }
 
 function setTranslationStatus(text, pct, device){
+  translationStatus = text || "-";
   const cell = document.getElementById("translationStatusCell");
   if(!text || text === "skipped"){
     cell.textContent = "-";
@@ -481,6 +512,16 @@ function setLang(lang, prob){
   cell.textContent = `${lang}${probText}`;
 }
 
+function isActiveStatus(status){
+  return status && !["done", "error", "cancelled", "skipped"].includes(status);
+}
+
+function updateStopButton(){
+  const active = (transcriptionJobId && isActiveStatus(transcriptionStatus)) ||
+    (translationJobId && isActiveStatus(translationStatus));
+  document.getElementById("stopBtn").disabled = !active;
+}
+
 async function refreshFiles(){
   const res = await fetch("/api/files");
   const data = await res.json();
@@ -493,19 +534,45 @@ async function refreshFiles(){
     sel.appendChild(opt);
   }
 }
+
+async function refreshSrtFiles(preferred){
+  const res = await fetch("/api/srt-files");
+  const data = await res.json();
+  const sel = document.getElementById("srtSelect");
+  const current = preferred || sel.value;
+  sel.innerHTML = "";
+  for(const f of data.files){
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f;
+    if(f === current){
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  }
+  if(!sel.value && data.files.length){
+    sel.value = data.files[0];
+  }
+}
+
 refreshFiles();
+refreshSrtFiles();
 
 document.getElementById("fileSelect").addEventListener("change", () => {
-  uploadedServerPath = null; // jeśli wybierasz z listy, kasujemy upload
+  uploadedServerPath = null;
   const v = document.getElementById("fileSelect").value;
   document.getElementById("selectedFile").textContent = v || "-";
-  document.getElementById("metaLine").textContent = v ? "źródło: /work/in (mount)" : "-";
+  document.getElementById("metaLine").textContent = v ? "zrodlo: /work/in (mount)" : "-";
 });
 
 function resetUi(){
-  if(es) es.close();
-  es = null;
-  currentJobId = null;
+  if(transcribeEs) transcribeEs.close();
+  if(translateEs) translateEs.close();
+  transcribeEs = null;
+  translateEs = null;
+
+  transcriptionJobId = null;
+  translationJobId = null;
 
   document.getElementById("outputNameOriginal").textContent = "-";
   document.getElementById("outputNameTranslated").textContent = "-";
@@ -513,7 +580,6 @@ function resetUi(){
   document.getElementById("downloadLinkOriginal").href = "#";
   document.getElementById("downloadLinkTranslated").style.display = "none";
   document.getElementById("downloadLinkTranslated").href = "#";
-  document.getElementById("resetBtn").disabled = true;
 
   setTranscriptionProgress(0);
   setTranslationProgress(0);
@@ -521,11 +587,13 @@ function resetUi(){
   setTranscriptionStatus("-");
   setTranslationStatus(null, null, null);
   setLang(null, null);
-  resetTimer();
+  resetTimers();
 
-  document.getElementById("startBtn").disabled = false;
+  document.getElementById("startTranscribeBtn").disabled = false;
+  document.getElementById("startTranslateBtn").disabled = false;
+  document.getElementById("resetBtn").disabled = false;
+  updateStopButton();
 }
-
 
 async function uploadFile(){
   const fi = document.getElementById("fileUpload");
@@ -535,22 +603,22 @@ async function uploadFile(){
     return;
   }
   const f = fi.files[0];
-  info.textContent = "Wysyłam...";
+  info.textContent = "Wysylam...";
   const fd = new FormData();
   fd.append("file", f);
   const res = await fetch("/api/upload", { method:"POST", body: fd });
   const data = await res.json();
   if(!res.ok){
-    info.textContent = "Błąd: " + (data.detail || res.statusText);
+    info.textContent = "Blad: " + (data.detail || res.statusText);
     return;
   }
   uploadedServerPath = data.server_path;
   document.getElementById("selectedFile").textContent = uploadedServerPath;
-  document.getElementById("metaLine").textContent = "źródło: upload (w kontenerze)";
+  document.getElementById("metaLine").textContent = "zrodlo: upload (w kontenerze)";
   info.textContent = "OK. Server path: " + uploadedServerPath;
 }
 
-async function startJob(){
+async function startTranscription(){
   const fromList = document.getElementById("fileSelect").value;
   const path = uploadedServerPath || fromList;
   if(!path){
@@ -558,26 +626,18 @@ async function startJob(){
     return;
   }
 
-  const translateTo = document.getElementById("translateLang").value;
-
-  // reset UI + timer
   setTranscriptionProgress(0);
-  setTranslationProgress(0);
-  setProgressText(0, 0, translateTo ? "queued" : null);
+  setProgressText(0, translationPct, translationStatus);
+  setTranscriptionStatus("wysylam job...");
+  setLang(null, null);
   document.getElementById("outputNameOriginal").textContent = "-";
-  document.getElementById("outputNameTranslated").textContent = "-";
   document.getElementById("downloadLinkOriginal").style.display = "none";
   document.getElementById("downloadLinkOriginal").href = "#";
-  document.getElementById("downloadLinkTranslated").style.display = "none";
-  document.getElementById("downloadLinkTranslated").href = "#";
+  document.getElementById("startTranscribeBtn").disabled = true;
   document.getElementById("resetBtn").disabled = false;
+  updateStopButton();
 
-  setTranscriptionStatus("wysylam job...");
-  setTranslationStatus(translateTo ? "queued" : null, 0, null);
-  setLang(null, null);
-  document.getElementById("startBtn").disabled = true;
-
-  startTimer();
+  startTimer("transcription");
 
   const payload = {
     path,
@@ -585,8 +645,7 @@ async function startJob(){
     device: "cuda",
     compute_type: "float16",
     vad: true,
-    beam_size: 5,
-    translate_to: translateTo
+    beam_size: 5
   };
   document.getElementById("modelCell").textContent = payload.model;
 
@@ -598,46 +657,102 @@ async function startJob(){
   const data = await res.json();
   if(!res.ok){
     setTranscriptionStatus("blad");
-    stopTimer();
-    document.getElementById("startBtn").disabled = false;
+    stopTimer("transcription");
+    document.getElementById("startTranscribeBtn").disabled = false;
     alert(data.detail || res.statusText);
     return;
   }
 
-  currentJobId = data.job_id;
-  listenJob(currentJobId);
+  transcriptionJobId = data.job_id;
+  listenTranscriptionJob(transcriptionJobId);
 }
 
+async function startTranslation(){
+  const srtPath = document.getElementById("srtSelect").value;
+  if(!srtPath){
+    alert("Wybierz plik SRT z listy.");
+    return;
+  }
+  const translateTo = document.getElementById("translateLang").value;
 
-function listenJob(jobId){
-  if(es) es.close();
-  es = new EventSource(`/api/jobs/${jobId}/events`);
+  setTranslationProgress(0);
+  setProgressText(transcriptionPct, 0, "queued");
+  setTranslationStatus("queued", 0, null);
+  document.getElementById("outputNameTranslated").textContent = "-";
+  document.getElementById("downloadLinkTranslated").style.display = "none";
+  document.getElementById("downloadLinkTranslated").href = "#";
+  document.getElementById("startTranslateBtn").disabled = true;
+  document.getElementById("resetBtn").disabled = false;
+  updateStopButton();
 
-  es.onmessage = (ev) => {
+  startTimer("translation");
+
+  const payload = {
+    srt_path: srtPath,
+    translate_to: translateTo
+  };
+
+  const res = await fetch("/api/translations", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if(!res.ok){
+    setTranslationStatus("blad", 0, null);
+    stopTimer("translation");
+    document.getElementById("startTranslateBtn").disabled = false;
+    alert(data.detail || res.statusText);
+    return;
+  }
+
+  translationJobId = data.job_id;
+  listenTranslationJob(translationJobId);
+}
+
+async function stopCurrentJob(){
+  let jobId = null;
+  if(translationJobId && isActiveStatus(translationStatus)){
+    jobId = translationJobId;
+  }else if(transcriptionJobId && isActiveStatus(transcriptionStatus)){
+    jobId = transcriptionJobId;
+  }
+
+  if(!jobId){
+    alert("Brak aktywnego procesu.");
+    return;
+  }
+
+  const res = await fetch(`/api/jobs/${jobId}/stop`, { method:"POST" });
+  if(!res.ok){
+    alert("Nie udalo sie zatrzymac zadania.");
+    return;
+  }
+  if(jobId === translationJobId){
+    setTranslationStatus("stopping", translationPct, null);
+  }else{
+    setTranscriptionStatus("stopping");
+  }
+  updateStopButton();
+}
+
+function listenTranscriptionJob(jobId){
+  if(transcribeEs) transcribeEs.close();
+  transcribeEs = new EventSource(`/api/jobs/${jobId}/events`);
+
+  transcribeEs.onmessage = (ev) => {
     const job = JSON.parse(ev.data);
 
-    const transcriptionStatus = job.transcription_status || job.status || "-";
-    const translationStatus = job.translation_status || null;
-    const transcriptionPct = job.progress || 0;
-    const translationPct = job.translation_progress || 0;
-
-    setTranscriptionStatus(transcriptionStatus);
-    setTranslationStatus(translationStatus, translationPct, job.translation_device);
-    setTranscriptionProgress(transcriptionPct);
-    setTranslationProgress(translationPct);
+    const status = job.transcription_status || job.status || "-";
+    setTranscriptionStatus(status);
+    setTranscriptionProgress(job.progress || 0);
     setProgressText(transcriptionPct, translationPct, translationStatus);
 
     if(job.output_name){
       document.getElementById("outputNameOriginal").textContent = job.output_name;
     }
-    if(job.translation_output_name){
-      document.getElementById("outputNameTranslated").textContent = job.translation_output_name;
-    }
-
     if(job.detected_language){
       setLang(job.detected_language, job.language_probability || 0);
-    }else{
-      setLang(null, null);
     }
 
     const originalLink = document.getElementById("downloadLinkOriginal");
@@ -648,6 +763,46 @@ function listenJob(jobId){
       originalLink.style.display = "none";
     }
 
+    if(job.transcription_status === "done"){
+      stopTimer("transcription");
+      document.getElementById("startTranscribeBtn").disabled = false;
+      refreshSrtFiles(`out:${job.output_name}`);
+      transcribeEs.close();
+    }
+
+    if(job.status === "error" || job.status === "cancelled"){
+      stopTimer("transcription");
+      document.getElementById("startTranscribeBtn").disabled = false;
+      transcribeEs.close();
+      if(job.status === "error"){
+        alert(job.error || "Unknown error");
+      }
+    }
+
+    updateStopButton();
+  };
+
+  transcribeEs.onerror = () => {
+    // SSE moze czasem sie rozlaczyc; zostawiamy prosto.
+  };
+}
+
+function listenTranslationJob(jobId){
+  if(translateEs) translateEs.close();
+  translateEs = new EventSource(`/api/jobs/${jobId}/events`);
+
+  translateEs.onmessage = (ev) => {
+    const job = JSON.parse(ev.data);
+
+    const status = job.translation_status || job.status || "-";
+    setTranslationStatus(status, job.translation_progress || 0, job.translation_device);
+    setTranslationProgress(job.translation_progress || 0);
+    setProgressText(transcriptionPct, translationPct, translationStatus);
+
+    if(job.translation_output_name){
+      document.getElementById("outputNameTranslated").textContent = job.translation_output_name;
+    }
+
     const translatedLink = document.getElementById("downloadLinkTranslated");
     if(job.translation_output_name && job.translation_status === "done"){
       translatedLink.href = `/api/jobs/${jobId}/srt-translated`;
@@ -656,25 +811,28 @@ function listenJob(jobId){
       translatedLink.style.display = "none";
     }
 
-    if(job.status === "done"){
-      stopTimer();
-      document.getElementById("startBtn").disabled = false;
-      es.close();
+    if(job.translation_status === "done"){
+      stopTimer("translation");
+      document.getElementById("startTranslateBtn").disabled = false;
+      translateEs.close();
     }
 
-    if(job.status === "error"){
-      stopTimer();
-      document.getElementById("startBtn").disabled = false;
-      es.close();
-      alert(job.error || job.translation_error || "Unknown error");
+    if(job.status === "error" || job.status === "cancelled"){
+      stopTimer("translation");
+      document.getElementById("startTranslateBtn").disabled = false;
+      translateEs.close();
+      if(job.status === "error"){
+        alert(job.translation_error || "Unknown error");
+      }
     }
+
+    updateStopButton();
   };
 
-  es.onerror = () => {
+  translateEs.onerror = () => {
     // SSE moze czasem sie rozlaczyc; zostawiamy prosto.
   };
 }
-
 </script>
 </body>
 </html>
