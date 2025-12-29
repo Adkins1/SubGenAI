@@ -201,6 +201,41 @@
       transition: width .25s ease;
     }
 
+    .barGroup{
+      margin-top: 10px;
+    }
+
+    .barLabel{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .statusTable{
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 12.5px;
+    }
+
+    .statusTable th,
+    .statusTable td{
+      padding: 8px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .statusTable th{
+      color: var(--muted);
+      font-weight: 600;
+      width: 160px;
+    }
+
     .statusRow{
       display:flex;
       gap: 12px;
@@ -261,10 +296,6 @@
           Wybierz plik z podpiętego katalogu <code>/work/in</code> albo wgraj plik.
           Dostaniesz SRT jako <code>nazwa.&lt;język&gt;.srt</code> (np. <code>.jp.srt</code> dla japońskiego).
         </p>
-      </div>
-      <div class="rightMini">
-        <span class="badge">⏱️ czas: <strong id="timer">00:00</strong></span>
-        <span class="pill">model: large-v3</span>
       </div>
     </header>
 
@@ -333,13 +364,30 @@
       </div>
 
       <div style="margin-top:10px;">
-        <div class="bar"><div id="barFill"></div></div>
-        <div class="statusRow">
-          <span class="badge" id="statusBadge">transkrypcja: <strong>-</strong></span>
-          <span class="badge" id="translationStatusBadge" style="display:none;">tlumaczenie: <strong>-</strong></span>
-          <span class="badge" id="langBadge" style="display:none;">lang: <strong>-</strong></span>
-          <span class="badge">progress: <strong id="progressText">0.0%</strong></span>
+        <div class="barGroup">
+          <div class="barLabel">
+            <span>Transkrypcja</span>
+            <span id="transcriptionPct">0.0%</span>
+          </div>
+          <div class="bar"><div id="barFillTranscription"></div></div>
         </div>
+
+        <div class="barGroup">
+          <div class="barLabel">
+            <span>Tlumaczenie</span>
+            <span id="translationPct">0.0%</span>
+          </div>
+          <div class="bar"><div id="barFillTranslation"></div></div>
+        </div>
+
+        <table class="statusTable">
+          <tr><th>Czas</th><td id="timer">00:00</td></tr>
+          <tr><th>Model</th><td id="modelCell">large-v3</td></tr>
+          <tr><th>Transkrypcja</th><td id="transcriptionStatusCell">-</td></tr>
+          <tr><th>Tlumaczenie</th><td id="translationStatusCell">-</td></tr>
+          <tr><th>Lang</th><td id="langStatusCell">-</td></tr>
+          <tr><th>Progress</th><td id="progressText">0.0%</td></tr>
+        </table>
       </div>
     </div>
   </div>
@@ -379,28 +427,58 @@ function stopTimer(){
   }
 }
 
-function setProgress(pct){
-  const fill = document.getElementById("barFill");
+function setTranscriptionProgress(pct){
+  const fill = document.getElementById("barFillTranscription");
   fill.style.width = `${pct}%`;
-  document.getElementById("progressText").textContent = `${pct.toFixed(1)}%`;
+  document.getElementById("transcriptionPct").textContent = `${pct.toFixed(1)}%`;
+}
+
+function setTranslationProgress(pct){
+  const fill = document.getElementById("barFillTranslation");
+  fill.style.width = `${pct}%`;
+  document.getElementById("translationPct").textContent = `${pct.toFixed(1)}%`;
+}
+
+function setProgressText(transcriptionPct, translationPct, translationStatus){
+  let text = `${transcriptionPct.toFixed(1)}%`;
+  if(translationStatus && translationStatus !== "skipped"){
+    text = `transkrypcja ${transcriptionPct.toFixed(1)}%, tlumaczenie ${translationPct.toFixed(1)}%`;
+  }
+  document.getElementById("progressText").textContent = text;
 }
 
 function setTranscriptionStatus(text){
-  const b = document.getElementById("statusBadge");
-  b.innerHTML = `transkrypcja: <strong>${text}</strong>`;
+  const cell = document.getElementById("transcriptionStatusCell");
+  cell.textContent = text || "-";
 }
 
-function setTranslationStatus(text, pct){
-  const b = document.getElementById("translationStatusBadge");
+function setTranslationStatus(text, pct, device){
+  const cell = document.getElementById("translationStatusCell");
   if(!text || text === "skipped"){
-    b.style.display = "none";
+    cell.textContent = "-";
     return;
   }
-  b.style.display = "inline-flex";
-  const pctText = (pct !== undefined && pct !== null && !Number.isNaN(pct))
-    ? ` <span class="small">(${pct.toFixed(1)}%)</span>`
+  const parts = [];
+  if(device){
+    parts.push(device);
+  }
+  if(pct !== undefined && pct !== null && !Number.isNaN(pct)){
+    parts.push(`${pct.toFixed(1)}%`);
+  }
+  const suffix = parts.length ? ` (${parts.join(", ")})` : "";
+  cell.textContent = `${text}${suffix}`;
+}
+
+function setLang(lang, prob){
+  const cell = document.getElementById("langStatusCell");
+  if(!lang){
+    cell.textContent = "-";
+    return;
+  }
+  const probText = (prob !== undefined && prob !== null && !Number.isNaN(prob))
+    ? ` (${prob.toFixed(3)})`
     : "";
-  b.innerHTML = `tlumaczenie: <strong>${text}</strong>${pctText}`;
+  cell.textContent = `${lang}${probText}`;
 }
 
 async function refreshFiles(){
@@ -435,18 +513,19 @@ function resetUi(){
   document.getElementById("downloadLinkOriginal").href = "#";
   document.getElementById("downloadLinkTranslated").style.display = "none";
   document.getElementById("downloadLinkTranslated").href = "#";
-  document.getElementById("langBadge").style.display = "none";
-  document.getElementById("langBadge").innerHTML = "lang: <strong>-</strong>";
-  document.getElementById("translationStatusBadge").style.display = "none";
   document.getElementById("resetBtn").disabled = true;
 
-  setProgress(0);
+  setTranscriptionProgress(0);
+  setTranslationProgress(0);
+  setProgressText(0, 0, null);
   setTranscriptionStatus("-");
-  setTranslationStatus(null, null);
+  setTranslationStatus(null, null, null);
+  setLang(null, null);
   resetTimer();
 
   document.getElementById("startBtn").disabled = false;
 }
+
 
 async function uploadFile(){
   const fi = document.getElementById("fileUpload");
@@ -479,21 +558,23 @@ async function startJob(){
     return;
   }
 
+  const translateTo = document.getElementById("translateLang").value;
+
   // reset UI + timer
-  setProgress(0);
+  setTranscriptionProgress(0);
+  setTranslationProgress(0);
+  setProgressText(0, 0, translateTo ? "queued" : null);
   document.getElementById("outputNameOriginal").textContent = "-";
   document.getElementById("outputNameTranslated").textContent = "-";
   document.getElementById("downloadLinkOriginal").style.display = "none";
   document.getElementById("downloadLinkOriginal").href = "#";
   document.getElementById("downloadLinkTranslated").style.display = "none";
   document.getElementById("downloadLinkTranslated").href = "#";
-  document.getElementById("langBadge").style.display = "none";
   document.getElementById("resetBtn").disabled = false;
 
-  const translateTo = document.getElementById("translateLang").value;
-
-  setTranscriptionStatus("wysyłam job...");
-  setTranslationStatus(translateTo ? "queued" : null, 0);
+  setTranscriptionStatus("wysylam job...");
+  setTranslationStatus(translateTo ? "queued" : null, 0, null);
+  setLang(null, null);
   document.getElementById("startBtn").disabled = true;
 
   startTimer();
@@ -507,6 +588,7 @@ async function startJob(){
     beam_size: 5,
     translate_to: translateTo
   };
+  document.getElementById("modelCell").textContent = payload.model;
 
   const res = await fetch("/api/jobs", {
     method:"POST",
@@ -515,7 +597,7 @@ async function startJob(){
   });
   const data = await res.json();
   if(!res.ok){
-    setTranscriptionStatus("błąd");
+    setTranscriptionStatus("blad");
     stopTimer();
     document.getElementById("startBtn").disabled = false;
     alert(data.detail || res.statusText);
@@ -526,6 +608,7 @@ async function startJob(){
   listenJob(currentJobId);
 }
 
+
 function listenJob(jobId){
   if(es) es.close();
   es = new EventSource(`/api/jobs/${jobId}/events`);
@@ -534,9 +617,15 @@ function listenJob(jobId){
     const job = JSON.parse(ev.data);
 
     const transcriptionStatus = job.transcription_status || job.status || "-";
+    const translationStatus = job.translation_status || null;
+    const transcriptionPct = job.progress || 0;
+    const translationPct = job.translation_progress || 0;
+
     setTranscriptionStatus(transcriptionStatus);
-    setTranslationStatus(job.translation_status, job.translation_progress);
-    setProgress(job.progress || 0);
+    setTranslationStatus(translationStatus, translationPct, job.translation_device);
+    setTranscriptionProgress(transcriptionPct);
+    setTranslationProgress(translationPct);
+    setProgressText(transcriptionPct, translationPct, translationStatus);
 
     if(job.output_name){
       document.getElementById("outputNameOriginal").textContent = job.output_name;
@@ -546,9 +635,9 @@ function listenJob(jobId){
     }
 
     if(job.detected_language){
-      const lb = document.getElementById("langBadge");
-      lb.style.display = "inline-flex";
-      lb.innerHTML = `lang: <strong>${job.detected_language}</strong> <span class="small">(${(job.language_probability||0).toFixed(3)})</span>`;
+      setLang(job.detected_language, job.language_probability || 0);
+    }else{
+      setLang(null, null);
     }
 
     const originalLink = document.getElementById("downloadLinkOriginal");
@@ -582,9 +671,10 @@ function listenJob(jobId){
   };
 
   es.onerror = () => {
-    // SSE może czasem się rozłączyć; zostawiamy prosto.
+    // SSE moze czasem sie rozlaczyc; zostawiamy prosto.
   };
 }
+
 </script>
 </body>
 </html>

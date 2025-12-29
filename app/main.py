@@ -134,7 +134,11 @@ def pick_translation_device() -> str:
         arch = f"sm_{major}{minor}"
         supported = torch.cuda.get_arch_list()
         if arch not in supported:
-            logger.warning("Torch does not support GPU arch %s; falling back to CPU", arch)
+            logger.warning(
+                "Torch does not support GPU arch %s; falling back to CPU. "
+                "Rebuild with TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128 or /cu130.",
+                arch,
+            )
             return "cpu"
     except Exception:
         logger.warning("Failed to validate CUDA arch; falling back to CPU")
@@ -399,7 +403,13 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
         translation_language=translate_to,
         translation_device=translation_device,
     ))
-    logger.info("Job %s: translation start (%s -> %s)", job_id, detected, translate_to)
+    logger.info(
+        "Job %s: translation start (%s -> %s, device=%s)",
+        job_id,
+        detected,
+        translate_to,
+        translation_device,
+    )
 
     try:
         translated_segments = translate_segments(

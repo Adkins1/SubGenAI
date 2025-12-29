@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python3 -m pip install -U pip setuptools wheel
 
 # PyTorch (CUDA) for translation on GPU
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu126
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 ARG TORCH_VERSION=
 RUN if [ -n "$TORCH_VERSION" ]; then \
       pip install --no-cache-dir --index-url ${TORCH_INDEX_URL} torch==${TORCH_VERSION}; \

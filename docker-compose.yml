@@ -1,6 +1,9 @@
 services:
   fw-web:
-    build: .
+    build:
+      context: .
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}
     container_name: fw-web
     ports:
       - "8000:8000"
