@@ -18,7 +18,7 @@ Aplikacja web do lokalnej transkrypcji wideo/audio i generowania napisow SRT w k
 - Po zakonczeniu widoczny jest link do pobrania SRT.
 
 ## Uruchomienie
-1. Ustaw ANIME_DIR w .env (sciezka na hoscie do plikow z wideo/audio).
+1. Ustaw FILES_DIR w .env (sciezka na hoscie do plikow z wideo/audio).
 2. docker compose up --build
 3. Otworz http://localhost:8000
 
