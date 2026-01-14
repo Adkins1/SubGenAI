@@ -11,8 +11,8 @@ services:
     environment:
       - HF_HOME=/hf
     volumes:
-      # ZMIEN TO NA SWOJ FOLDER Z PLIKAMI (moze miec spacje) -> ustaw w .env: ANIME_DIR
-      - "${FILES_DIR}:/work/in:ro"
+      # SMB share mount (credentials in .env)
+      - "media-share:/work/in"
 
       # output na hosta (w tym folderze projektu utworz ./out)
       - "./out:/work/out"
@@ -22,3 +22,9 @@ services:
 
 volumes:
   fw-hf-cache:
+  media-share:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "${SMB_SHARE}"
+      o: "username=${SMB_USER},password=${SMB_PASS},${SMB_OPTS}"

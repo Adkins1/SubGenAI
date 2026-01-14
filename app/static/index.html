@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>faster-whisper Web</title>
+  <title>SUBGENAI</title>
   <style>
     :root{
       --bg1:#0b1020;
       --bg2:#0a2a3a;
+      --bg-accent1:#172a63;
+      --bg-accent2:#0f6b7a;
       --card: rgba(255,255,255,0.06);
       --card2: rgba(255,255,255,0.08);
       --border: rgba(255,255,255,0.12);
@@ -20,6 +22,129 @@
       --err: #ff5c7a;
       --btn: rgba(255,255,255,0.10);
       --btnHover: rgba(255,255,255,0.16);
+      --select-bg: rgba(8,12,20,0.75);
+      --select-text: rgba(255,255,255,0.95);
+      --select-border: rgba(255,255,255,0.22);
+      --select-focus: rgba(130,222,255,0.55);
+      --select-focus-glow: rgba(130,222,255,0.22);
+      --mono-bg: rgba(0,0,0,0.18);
+      --mono-border: rgba(255,255,255,0.12);
+      --link: rgba(130,222,255,0.95);
+    }
+
+    html[data-theme="midnight"]{
+      --bg1:#0b1020;
+      --bg2:#0a2a3a;
+      --bg-accent1:#172a63;
+      --bg-accent2:#0f6b7a;
+      --card: rgba(255,255,255,0.06);
+      --card2: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.12);
+      --text: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.68);
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+      --btn: rgba(255,255,255,0.10);
+      --btnHover: rgba(255,255,255,0.16);
+      --select-bg: rgba(8,12,20,0.75);
+      --select-text: rgba(255,255,255,0.95);
+      --select-border: rgba(255,255,255,0.22);
+      --select-focus: rgba(130,222,255,0.55);
+      --select-focus-glow: rgba(130,222,255,0.22);
+      --mono-bg: rgba(0,0,0,0.18);
+      --mono-border: rgba(255,255,255,0.12);
+      --link: rgba(130,222,255,0.95);
+    }
+
+    html[data-theme="ember"]{
+      --bg1:#1a0e0a;
+      --bg2:#2b0c12;
+      --bg-accent1:#4d1c14;
+      --bg-accent2:#8a3b1a;
+      --card: rgba(255,255,255,0.05);
+      --card2: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.12);
+      --text: rgba(255,247,240,0.94);
+      --muted: rgba(255,236,220,0.65);
+      --shadow: 0 10px 30px rgba(0,0,0,0.4);
+      --btn: rgba(255,255,255,0.10);
+      --btnHover: rgba(255,255,255,0.18);
+      --select-bg: rgba(25,12,10,0.8);
+      --select-text: rgba(255,255,255,0.95);
+      --select-border: rgba(255,255,255,0.22);
+      --select-focus: rgba(255,172,94,0.6);
+      --select-focus-glow: rgba(255,172,94,0.25);
+      --mono-bg: rgba(0,0,0,0.2);
+      --mono-border: rgba(255,255,255,0.12);
+      --link: rgba(255,196,126,0.95);
+    }
+
+    html[data-theme="aurora"]{
+      --bg1:#08161b;
+      --bg2:#0a2530;
+      --bg-accent1:#0e3a4b;
+      --bg-accent2:#0f7a68;
+      --card: rgba(255,255,255,0.06);
+      --card2: rgba(255,255,255,0.08);
+      --border: rgba(255,255,255,0.12);
+      --text: rgba(235,255,250,0.94);
+      --muted: rgba(209,244,236,0.68);
+      --shadow: 0 10px 30px rgba(0,0,0,0.38);
+      --btn: rgba(255,255,255,0.10);
+      --btnHover: rgba(255,255,255,0.18);
+      --select-bg: rgba(8,18,22,0.8);
+      --select-text: rgba(255,255,255,0.95);
+      --select-border: rgba(255,255,255,0.22);
+      --select-focus: rgba(96,236,212,0.55);
+      --select-focus-glow: rgba(96,236,212,0.22);
+      --mono-bg: rgba(0,0,0,0.18);
+      --mono-border: rgba(255,255,255,0.12);
+      --link: rgba(96,236,212,0.92);
+    }
+
+    html[data-theme="paper"]{
+      --bg1:#f4f6f9;
+      --bg2:#e7edf4;
+      --bg-accent1:#c9d9ef;
+      --bg-accent2:#f1d9c1;
+      --card: rgba(255,255,255,0.92);
+      --card2: rgba(255,255,255,0.95);
+      --border: rgba(20,30,40,0.12);
+      --text: rgba(24,28,36,0.92);
+      --muted: rgba(32,38,48,0.6);
+      --shadow: 0 10px 25px rgba(18,24,32,0.15);
+      --btn: rgba(18,24,32,0.06);
+      --btnHover: rgba(18,24,32,0.12);
+      --select-bg: rgba(255,255,255,0.98);
+      --select-text: rgba(18,24,32,0.92);
+      --select-border: rgba(18,24,32,0.18);
+      --select-focus: rgba(45,120,255,0.4);
+      --select-focus-glow: rgba(45,120,255,0.18);
+      --mono-bg: rgba(18,24,32,0.06);
+      --mono-border: rgba(18,24,32,0.12);
+      --link: rgba(40,96,206,0.9);
+    }
+
+    html[data-theme="sand"]{
+      --bg1:#f7f0e4;
+      --bg2:#f0dfc9;
+      --bg-accent1:#e7c7a1;
+      --bg-accent2:#f2d8bf;
+      --card: rgba(255,255,255,0.92);
+      --card2: rgba(255,255,255,0.95);
+      --border: rgba(42,33,23,0.14);
+      --text: rgba(36,27,18,0.92);
+      --muted: rgba(36,27,18,0.6);
+      --shadow: 0 10px 25px rgba(25,18,12,0.18);
+      --btn: rgba(36,27,18,0.07);
+      --btnHover: rgba(36,27,18,0.14);
+      --select-bg: rgba(255,255,255,0.98);
+      --select-text: rgba(36,27,18,0.92);
+      --select-border: rgba(36,27,18,0.18);
+      --select-focus: rgba(217,140,58,0.4);
+      --select-focus-glow: rgba(217,140,58,0.18);
+      --mono-bg: rgba(36,27,18,0.06);
+      --mono-border: rgba(36,27,18,0.12);
+      --link: rgba(173,96,32,0.9);
     }
 
     *{box-sizing:border-box}
@@ -27,8 +152,8 @@
       margin:0;
       font-family: ui-sans-serif, system-ui, Segoe UI, Arial;
       color: var(--text);
-      background: radial-gradient(1200px 600px at 15% 0%, #172a63 0%, transparent 55%),
-                  radial-gradient(900px 500px at 85% 10%, #0f6b7a 0%, transparent 50%),
+      background: radial-gradient(1200px 600px at 15% 0%, var(--bg-accent1) 0%, transparent 55%),
+                  radial-gradient(900px 500px at 85% 10%, var(--bg-accent2) 0%, transparent 50%),
                   linear-gradient(135deg, var(--bg1), var(--bg2));
       min-height:100vh;
     }
@@ -95,7 +220,7 @@
       margin:0 0 12px;
       font-size: 15px;
       letter-spacing: .2px;
-      color: rgba(255,255,255,0.94);
+      color: var(--text);
       display:flex;
       justify-content:space-between;
       align-items:center;
@@ -158,12 +283,12 @@
       font-size: 12px;
       padding: 10px;
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.16);
-      background: rgba(0,0,0,0.22);
-      color: rgba(255,255,255,0.92);
+      border: 1px solid var(--select-border);
+      background: var(--select-bg);
+      color: var(--select-text);
       outline: none;
     }
-    select:focus{ border-color: rgba(69,212,131,0.45); box-shadow: 0 0 0 3px rgba(69,212,131,0.12); }
+    select:focus{ border-color: var(--select-focus); box-shadow: 0 0 0 3px var(--select-focus-glow); }
 
     .mono{
       font-family: ui-monospace, Consolas, monospace;
@@ -172,10 +297,15 @@
       overflow-wrap: anywhere;
       word-break: break-word;
       color: rgba(255,255,255,0.90);
-      background: rgba(0,0,0,0.18);
-      border: 1px solid rgba(255,255,255,0.12);
+      background: var(--mono-bg);
+      border: 1px solid var(--mono-border);
       border-radius: 12px;
       padding: 10px;
+    }
+
+    html[data-theme="paper"] .mono,
+    html[data-theme="sand"] .mono{
+      color: rgba(24,28,36,0.9);
     }
 
     .grid2{
@@ -249,9 +379,9 @@
       font-size: 12px;
       padding: 6px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.08);
-      color: rgba(255,255,255,0.86);
+      border: 1px solid var(--border);
+      background: var(--card2);
+      color: var(--text);
       display:inline-flex;
       gap: 8px;
       align-items:center;
@@ -260,7 +390,7 @@
     .badge strong{ font-weight: 700; }
 
     a{
-      color: rgba(130,222,255,0.95);
+      color: var(--link);
       text-decoration: none;
       font-weight: 650;
     }
@@ -281,6 +411,10 @@
       flex-wrap:wrap;
     }
 
+    .themeSelect{
+      min-width: 180px;
+    }
+
     .small{
       font-size: 12px;
       color: var(--muted);
@@ -291,11 +425,21 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>faster-whisper (GPU) <span class="pill">local</span></h1>
+        <h1>SUBGENAI <span class="pill">local</span></h1>
         <p class="subtitle">
           Wybierz plik z podpiętego katalogu <code>/work/in</code> albo wgraj plik.
           Dostaniesz SRT jako <code>nazwa.&lt;język&gt;.srt</code> (np. <code>.jp.srt</code> dla japońskiego).
         </p>
+      </div>
+      <div class="rightMini">
+        <div class="small">Theme</div>
+        <select id="themeSelect" class="themeSelect">
+          <option value="midnight">Midnight</option>
+          <option value="ember">Ember</option>
+          <option value="aurora">Aurora</option>
+          <option value="paper">Paper</option>
+          <option value="sand">Sand</option>
+        </select>
       </div>
     </header>
 
@@ -304,9 +448,11 @@
         <div class="splitHeader">
           <h3>1) Wybor pliku z /work/in</h3>
           <div class="toolbar">
+            <button id="upBtn" onclick="goUp()" disabled>W gore</button>
             <button onclick="refreshFiles()">Odswiez liste</button>
           </div>
         </div>
+        <div class="small" style="margin-bottom:8px;">Aktualny folder: <span id="currentDir">/work/in</span></div>
         <select id="fileSelect" size="12"></select>
         <div class="hint">
           Jesli lista pusta: sprawdz volume w <code>docker-compose.yml</code> (np. <code>Z:/Media -> /work/in</code>).
@@ -332,21 +478,29 @@
         <div class="small" id="metaLine">-</div>
       </div>
 
+      <div style="margin-top:10px;">
+        <div class="small" style="margin-bottom:6px;">Wybrany plik</div>
+        <div class="mono" id="selectedFile">-</div>
+      </div>
+
       <div class="grid2" style="margin-top:10px;">
         <div>
-          <div class="small" style="margin-bottom:6px;">Wybrany plik</div>
-          <div class="mono" id="selectedFile">-</div>
+          <div class="small" style="margin-bottom:6px;">Jezyk audio/wideo</div>
+          <select id="videoLang"></select>
         </div>
         <div>
-          <div class="small" style="margin-bottom:6px;">Tlumaczenie</div>
-          <select id="translateLang">
-            <option value="pl" selected>Polski (pl)</option>
-          </select>
+          <div class="small" style="margin-bottom:6px;">Model transkrypcji</div>
+          <select id="modelSelect"></select>
         </div>
       </div>
 
       <div style="margin-top:10px;">
-        <div class="small" style="margin-bottom:6px;">Plik SRT do tlumaczenia (z /work/out)</div>
+        <div class="small" style="margin-bottom:6px;">Tlumaczenie</div>
+        <select id="translateLang"></select>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div class="small" style="margin-bottom:6px;">Plik SRT do tlumaczenia (z /work/in)</div>
         <select id="srtSelect" size="8"></select>
         <div class="toolbar" style="margin-top:8px;">
           <button onclick="refreshSrtFiles()">Odswiez liste SRT</button>
@@ -359,7 +513,7 @@
           <div class="mono" id="outputNameOriginal">-</div>
         </div>
         <div>
-          <div class="small" style="margin-bottom:6px;">SRT tlumaczenie (pl)</div>
+          <div class="small" style="margin-bottom:6px;">SRT tlumaczenie</div>
           <div class="mono" id="outputNameTranslated">-</div>
         </div>
       </div>
@@ -370,7 +524,7 @@
         <button id="stopBtn" class="danger" onclick="stopCurrentJob()" disabled>Stop</button>
         <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset Timerow</button>
         <a id="downloadLinkOriginal" href="#" style="display:none;">Pobierz SRT (oryginal)</a>
-        <a id="downloadLinkTranslated" href="#" style="display:none;">Pobierz SRT (pl)</a>
+        <a id="downloadLinkTranslated" href="#" style="display:none;">Pobierz SRT (tlumaczenie)</a>
       </div>
 
       <div style="margin-top:10px;">
@@ -413,6 +567,25 @@ let transcriptionPct = 0;
 let translationPct = 0;
 let transcriptionStatus = "-";
 let translationStatus = "-";
+let currentDir = "";
+let parentDir = null;
+let selectedInputPath = null;
+
+const TRANSCRIPTION_MODELS = [
+  "tiny",
+  "tiny.en",
+  "base",
+  "base.en",
+  "small",
+  "small.en",
+  "medium",
+  "medium.en",
+  "large-v1",
+  "large-v2",
+  "large-v3"
+];
+
+const THEMES = ["midnight", "ember", "aurora", "paper", "sand"];
 
 const timers = {
   transcription: { startMs: null, interval: null, cellId: "timerTranscription" },
@@ -425,6 +598,45 @@ function fmtElapsed(ms){
   const m = Math.floor(totalSec/60);
   const s = totalSec % 60;
   return `${pad2(m)}:${pad2(s)}`;
+}
+
+function joinPath(dir, name){
+  if(!dir){
+    return name;
+  }
+  return `${dir}/${name}`;
+}
+
+function titleCase(text){
+  return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function applyTheme(name){
+  const theme = THEMES.includes(name) ? name : "midnight";
+  document.documentElement.setAttribute("data-theme", theme);
+  const sel = document.getElementById("themeSelect");
+  if(sel){
+    sel.value = theme;
+  }
+  try{
+    localStorage.setItem("theme", theme);
+  }catch(e){
+    // ignore storage errors
+  }
+}
+
+function initTheme(){
+  let saved = null;
+  try{
+    saved = localStorage.getItem("theme");
+  }catch(e){
+    saved = null;
+  }
+  applyTheme(saved || "midnight");
+  const sel = document.getElementById("themeSelect");
+  if(sel){
+    sel.addEventListener("change", (ev) => applyTheme(ev.target.value));
+  }
 }
 
 function resetTimer(kind){
@@ -523,24 +735,65 @@ function updateStopButton(){
 }
 
 async function refreshFiles(){
-  const res = await fetch("/api/files");
+  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
+  const res = await fetch(`/api/files${query}`);
   const data = await res.json();
   const sel = document.getElementById("fileSelect");
   sel.innerHTML = "";
-  for(const f of data.files){
+  if(!res.ok){
+    alert(data.detail || res.statusText);
+    return;
+  }
+  currentDir = data.dir || "";
+  parentDir = data.parent;
+  document.getElementById("currentDir").textContent = currentDir ? `/work/in/${currentDir}` : "/work/in";
+  document.getElementById("upBtn").disabled = parentDir === null || parentDir === undefined;
+  if(!uploadedServerPath){
+    document.getElementById("metaLine").textContent = currentDir
+      ? `zrodlo: /work/in/${currentDir}`
+      : "zrodlo: /work/in";
+  }
+
+  const preferred = selectedInputPath;
+  for(const d of data.dirs){
     const opt = document.createElement("option");
-    opt.value = f;
-    opt.textContent = f;
+    opt.value = `dir:${d}`;
+    opt.textContent = `[DIR] ${d}`;
     sel.appendChild(opt);
   }
+  for(const f of data.files){
+    const opt = document.createElement("option");
+    opt.value = `file:${f}`;
+    opt.textContent = f;
+    if(preferred && joinPath(currentDir, f) === preferred){
+      opt.selected = true;
+    }
+    sel.appendChild(opt);
+  }
+  refreshSrtFiles();
+}
+
+function goUp(){
+  if(parentDir === null || parentDir === undefined){
+    return;
+  }
+  currentDir = parentDir;
+  selectedInputPath = null;
+  document.getElementById("selectedFile").textContent = "-";
+  refreshFiles();
 }
 
 async function refreshSrtFiles(preferred){
-  const res = await fetch("/api/srt-files");
+  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
+  const res = await fetch(`/api/srt-files${query}`);
   const data = await res.json();
   const sel = document.getElementById("srtSelect");
   const current = preferred || sel.value;
   sel.innerHTML = "";
+  if(!res.ok){
+    alert(data.detail || res.statusText);
+    return;
+  }
   for(const f of data.files){
     const opt = document.createElement("option");
     opt.value = f;
@@ -555,14 +808,94 @@ async function refreshSrtFiles(preferred){
   }
 }
 
+async function loadLanguages(){
+  const res = await fetch("/api/languages");
+  const data = await res.json();
+  if(!res.ok){
+    alert(data.detail || res.statusText);
+    return;
+  }
+
+  const videoSel = document.getElementById("videoLang");
+  const translateSel = document.getElementById("translateLang");
+  videoSel.innerHTML = "";
+  translateSel.innerHTML = "";
+
+  const autoOpt = document.createElement("option");
+  autoOpt.value = "auto";
+  autoOpt.textContent = "Auto";
+  videoSel.appendChild(autoOpt);
+
+  const whisper = (data.whisper || []).slice();
+  whisper.sort((a, b) => a.name.localeCompare(b.name));
+  for(const item of whisper){
+    const opt = document.createElement("option");
+    opt.value = item.code;
+    opt.textContent = `${titleCase(item.name)} (${item.code})`;
+    videoSel.appendChild(opt);
+  }
+
+  const translation = (data.translation || []).slice();
+  translation.sort((a, b) => a.name.localeCompare(b.name));
+  const plIndex = translation.findIndex((item) => item.code === "pl");
+  if(plIndex >= 0){
+    const pl = translation.splice(plIndex, 1)[0];
+    const opt = document.createElement("option");
+    opt.value = pl.code;
+    opt.textContent = `${titleCase(pl.name)} (${pl.code})`;
+    translateSel.appendChild(opt);
+  }
+  for(const item of translation){
+    const opt = document.createElement("option");
+    opt.value = item.code;
+    opt.textContent = `${titleCase(item.name)} (${item.code})`;
+    translateSel.appendChild(opt);
+  }
+  if(translateSel.options.length){
+    translateSel.value = "pl";
+  }
+}
+
+function loadModels(){
+  const modelSel = document.getElementById("modelSelect");
+  modelSel.innerHTML = "";
+  for(const name of TRANSCRIPTION_MODELS){
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    modelSel.appendChild(opt);
+  }
+  modelSel.value = "large-v3";
+}
+
+initTheme();
 refreshFiles();
-refreshSrtFiles();
+loadLanguages();
+loadModels();
 
 document.getElementById("fileSelect").addEventListener("change", () => {
   uploadedServerPath = null;
-  const v = document.getElementById("fileSelect").value;
-  document.getElementById("selectedFile").textContent = v || "-";
-  document.getElementById("metaLine").textContent = v ? "zrodlo: /work/in (mount)" : "-";
+  const sel = document.getElementById("fileSelect");
+  const v = sel.value;
+  if(!v){
+    return;
+  }
+  if(v.startsWith("dir:")){
+    const name = v.slice(4);
+    currentDir = joinPath(currentDir, name);
+    selectedInputPath = null;
+    document.getElementById("selectedFile").textContent = "-";
+    refreshFiles();
+    return;
+  }
+  if(v.startsWith("file:")){
+    const name = v.slice(5);
+    selectedInputPath = joinPath(currentDir, name);
+    document.getElementById("selectedFile").textContent = selectedInputPath;
+    document.getElementById("metaLine").textContent = currentDir
+      ? `zrodlo: /work/in/${currentDir}`
+      : "zrodlo: /work/in";
+  }
 });
 
 function resetUi(){
@@ -613,14 +946,14 @@ async function uploadFile(){
     return;
   }
   uploadedServerPath = data.server_path;
+  selectedInputPath = null;
   document.getElementById("selectedFile").textContent = uploadedServerPath;
   document.getElementById("metaLine").textContent = "zrodlo: upload (w kontenerze)";
   info.textContent = "OK. Server path: " + uploadedServerPath;
 }
 
 async function startTranscription(){
-  const fromList = document.getElementById("fileSelect").value;
-  const path = uploadedServerPath || fromList;
+  const path = uploadedServerPath || selectedInputPath;
   if(!path){
     alert("Wybierz plik z listy albo wgraj plik.");
     return;
@@ -639,13 +972,16 @@ async function startTranscription(){
 
   startTimer("transcription");
 
+  const language = document.getElementById("videoLang").value || "auto";
+  const model = document.getElementById("modelSelect").value || "large-v3";
   const payload = {
     path,
-    model: "large-v3",
+    model,
     device: "cuda",
     compute_type: "float16",
     vad: true,
-    beam_size: 5
+    beam_size: 5,
+    language
   };
   document.getElementById("modelCell").textContent = payload.model;
 
@@ -668,8 +1004,8 @@ async function startTranscription(){
 }
 
 async function startTranslation(){
-  const srtPath = document.getElementById("srtSelect").value;
-  if(!srtPath){
+  const srtFile = document.getElementById("srtSelect").value;
+  if(!srtFile){
     alert("Wybierz plik SRT z listy.");
     return;
   }
@@ -687,8 +1023,9 @@ async function startTranslation(){
 
   startTimer("translation");
 
+  const relPath = joinPath(currentDir, srtFile);
   const payload = {
-    srt_path: srtPath,
+    srt_path: `in:${relPath}`,
     translate_to: translateTo
   };
 
@@ -766,7 +1103,7 @@ function listenTranscriptionJob(jobId){
     if(job.transcription_status === "done"){
       stopTimer("transcription");
       document.getElementById("startTranscribeBtn").disabled = false;
-      refreshSrtFiles(`out:${job.output_name}`);
+      refreshSrtFiles(job.output_name);
       transcribeEs.close();
     }
 

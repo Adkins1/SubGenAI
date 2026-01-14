@@ -39,24 +39,213 @@ LANG_ALIAS_REV = {v: k for k, v in LANG_ALIAS.items()}
 MEDIA_EXT = {".mkv", ".mp4", ".avi", ".mov", ".mp3", ".wav", ".m4a", ".flac", ".webm"}
 
 TRANSLATION_MODEL_NAME = "facebook/nllb-200-3.3B"
-NLLB_SRC_LANG = {
-    "ja": "jpn_Jpan",
-    "en": "eng_Latn",
-    "pl": "pol_Latn",
+WHISPER_LANGUAGES = {
+    "af": "afrikaans",
+    "am": "amharic",
+    "ar": "arabic",
+    "as": "assamese",
+    "az": "azerbaijani",
+    "ba": "bashkir",
+    "be": "belarusian",
+    "bg": "bulgarian",
+    "bn": "bengali",
+    "bo": "tibetan",
+    "br": "breton",
+    "bs": "bosnian",
+    "ca": "catalan",
+    "cs": "czech",
+    "cy": "welsh",
+    "da": "danish",
+    "de": "german",
+    "el": "greek",
+    "en": "english",
+    "es": "spanish",
+    "et": "estonian",
+    "eu": "basque",
+    "fa": "persian",
+    "fi": "finnish",
+    "fo": "faroese",
+    "fr": "french",
+    "gl": "galician",
+    "gu": "gujarati",
+    "ha": "hausa",
+    "haw": "hawaiian",
+    "he": "hebrew",
+    "hi": "hindi",
+    "hr": "croatian",
+    "ht": "haitian creole",
+    "hu": "hungarian",
+    "hy": "armenian",
+    "id": "indonesian",
+    "is": "icelandic",
+    "it": "italian",
+    "ja": "japanese",
+    "jw": "javanese",
+    "ka": "georgian",
+    "kk": "kazakh",
+    "km": "khmer",
+    "kn": "kannada",
+    "ko": "korean",
+    "la": "latin",
+    "lb": "luxembourgish",
+    "ln": "lingala",
+    "lo": "lao",
+    "lt": "lithuanian",
+    "lv": "latvian",
+    "mg": "malagasy",
+    "mi": "maori",
+    "mk": "macedonian",
+    "ml": "malayalam",
+    "mn": "mongolian",
+    "mr": "marathi",
+    "ms": "malay",
+    "mt": "maltese",
+    "my": "myanmar",
+    "ne": "nepali",
+    "nl": "dutch",
+    "nn": "norwegian nynorsk",
+    "no": "norwegian",
+    "oc": "occitan",
+    "pa": "punjabi",
+    "pl": "polish",
+    "ps": "pashto",
+    "pt": "portuguese",
+    "ro": "romanian",
+    "ru": "russian",
+    "sa": "sanskrit",
+    "sd": "sindhi",
+    "si": "sinhala",
+    "sk": "slovak",
+    "sl": "slovenian",
+    "sn": "shona",
+    "so": "somali",
+    "sq": "albanian",
+    "sr": "serbian",
+    "su": "sundanese",
+    "sv": "swedish",
+    "sw": "swahili",
+    "ta": "tamil",
+    "te": "telugu",
+    "tg": "tajik",
+    "th": "thai",
+    "tk": "turkmen",
+    "tl": "tagalog",
+    "tr": "turkish",
+    "tt": "tatar",
+    "uk": "ukrainian",
+    "ur": "urdu",
+    "uz": "uzbek",
+    "vi": "vietnamese",
+    "yi": "yiddish",
+    "yo": "yoruba",
+    "yue": "cantonese",
+    "zh": "chinese",
+}
+WHISPER_LANG_CODES = set(WHISPER_LANGUAGES.keys())
+NLLB_LANG_MAP = {
+    "af": "afr_Latn",
+    "am": "amh_Ethi",
+    "ar": "arb_Arab",
+    "as": "asm_Beng",
+    "az": "azj_Latn",
+    "ba": "bak_Cyrl",
+    "be": "bel_Cyrl",
+    "bg": "bul_Cyrl",
+    "bn": "ben_Beng",
+    "bo": "bod_Tibt",
+    "br": "bre_Latn",
+    "bs": "bos_Latn",
+    "ca": "cat_Latn",
+    "cs": "ces_Latn",
+    "cy": "cym_Latn",
+    "da": "dan_Latn",
     "de": "deu_Latn",
-    "fr": "fra_Latn",
+    "el": "ell_Grek",
+    "en": "eng_Latn",
     "es": "spa_Latn",
+    "et": "est_Latn",
+    "eu": "eus_Latn",
+    "fa": "pes_Arab",
+    "fi": "fin_Latn",
+    "fo": "fao_Latn",
+    "fr": "fra_Latn",
+    "gl": "glg_Latn",
+    "gu": "guj_Gujr",
+    "ha": "hau_Latn",
+    "haw": "haw_Latn",
+    "he": "heb_Hebr",
+    "hi": "hin_Deva",
+    "hr": "hrv_Latn",
+    "ht": "hat_Latn",
+    "hu": "hun_Latn",
+    "hy": "hye_Armn",
+    "id": "ind_Latn",
+    "is": "isl_Latn",
     "it": "ita_Latn",
-    "pt": "por_Latn",
-    "ru": "rus_Cyrl",
-    "uk": "ukr_Cyrl",
-    "zh": "zho_Hans",
+    "ja": "jpn_Jpan",
+    "jw": "jav_Latn",
+    "ka": "kat_Geor",
+    "kk": "kaz_Cyrl",
+    "km": "khm_Khmr",
+    "kn": "kan_Knda",
     "ko": "kor_Hang",
-}
-NLLB_TGT_LANG = {
+    "la": "lat_Latn",
+    "lb": "ltz_Latn",
+    "ln": "lin_Latn",
+    "lo": "lao_Laoo",
+    "lt": "lit_Latn",
+    "lv": "lvs_Latn",
+    "mg": "mlg_Latn",
+    "mi": "mri_Latn",
+    "mk": "mkd_Cyrl",
+    "ml": "mal_Mlym",
+    "mn": "khk_Cyrl",
+    "mr": "mar_Deva",
+    "ms": "zsm_Latn",
+    "mt": "mlt_Latn",
+    "my": "mya_Mymr",
+    "ne": "nep_Deva",
+    "nl": "nld_Latn",
+    "nn": "nno_Latn",
+    "no": "nob_Latn",
+    "oc": "oci_Latn",
+    "pa": "pan_Guru",
     "pl": "pol_Latn",
+    "ps": "pbt_Arab",
+    "pt": "por_Latn",
+    "ro": "ron_Latn",
+    "ru": "rus_Cyrl",
+    "sa": "san_Deva",
+    "sd": "snd_Arab",
+    "si": "sin_Sinh",
+    "sk": "slk_Latn",
+    "sl": "slv_Latn",
+    "sn": "sna_Latn",
+    "so": "som_Latn",
+    "sq": "als_Latn",
+    "sr": "srp_Cyrl",
+    "su": "sun_Latn",
+    "sv": "swe_Latn",
+    "sw": "swh_Latn",
+    "ta": "tam_Taml",
+    "te": "tel_Telu",
+    "tg": "tgk_Cyrl",
+    "th": "tha_Thai",
+    "tk": "tuk_Latn",
+    "tl": "tgl_Latn",
+    "tr": "tur_Latn",
+    "tt": "tat_Cyrl",
+    "uk": "ukr_Cyrl",
+    "ur": "urd_Arab",
+    "uz": "uzn_Latn",
+    "vi": "vie_Latn",
+    "yi": "yid_Hebr",
+    "yo": "yor_Latn",
+    "yue": "yue_Hant",
+    "zh": "zho_Hans",
 }
-KNOWN_LANG_TAGS = set(LANG_ALIAS.keys()) | set(LANG_ALIAS.values()) | set(NLLB_SRC_LANG.keys()) | set(NLLB_TGT_LANG.keys())
+NLLB_LANG_CODES = set(NLLB_LANG_MAP.keys())
+KNOWN_LANG_TAGS = set(LANG_ALIAS.keys()) | set(LANG_ALIAS.values()) | set(NLLB_LANG_MAP.keys())
 
 JOBS: Dict[str, Dict[str, Any]] = {}
 JOBS_LOCK = asyncio.Lock()
@@ -225,7 +414,7 @@ def infer_lang_from_srt_path(path: Path) -> Optional[str]:
         return None
     candidate = parts[-1].lower()
     candidate = LANG_ALIAS_REV.get(candidate, candidate)
-    return candidate if candidate in NLLB_SRC_LANG else None
+    return candidate if candidate in NLLB_LANG_MAP else None
 
 def build_translation_output_name(srt_path: Path, lang_tag: str) -> str:
     base = srt_path.stem
@@ -325,7 +514,8 @@ def translate_segments(segments, src_lang: str, tgt_lang: str, job_id: str, loop
     return translated
 
 def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str, device: str,
-                          compute_type: str, vad: bool, beam_size: int):
+                          compute_type: str, vad: bool, beam_size: int,
+                          language: Optional[str]):
     duration = get_duration_seconds(input_path)
 
     logger.info("Job %s: start transcription (%s)", job_id, input_path)
@@ -351,7 +541,7 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
                 raise JobCancelled("Transcription cancelled")
             segments, info = model.transcribe(
                 str(input_path),
-                language=None,          # auto detect
+                language=language,      # None == auto detect
                 task="transcribe",      # zawsze oryginal
                 vad_filter=vad,
                 beam_size=beam_size,
@@ -432,9 +622,9 @@ def run_transcription_sync(loop, job_id: str, input_path: Path, model_name: str,
         clear_cancel_event(job_id)
         return
 
-    detected = (info.language or "unk").lower()
+    detected = (info.language or language or "unk").lower()
     out_name = build_output_name(input_path, detected)
-    out_path = OUT_DIR / out_name
+    out_path = input_path.parent / out_name
 
     loop.call_soon_threadsafe(asyncio.create_task, update_job(
         job_id,
@@ -524,8 +714,8 @@ def run_translation_sync(loop, job_id: str, srt_path: Path, translate_to: str):
         clear_cancel_event(job_id)
         return
 
-    src_lang = NLLB_SRC_LANG.get(src_lang_key)
-    tgt_lang = NLLB_TGT_LANG.get(translate_to)
+    src_lang = NLLB_LANG_MAP.get(src_lang_key)
+    tgt_lang = NLLB_LANG_MAP.get(translate_to)
     if not src_lang or not tgt_lang:
         loop.call_soon_threadsafe(asyncio.create_task, update_job(
             job_id,
@@ -537,7 +727,7 @@ def run_translation_sync(loop, job_id: str, srt_path: Path, translate_to: str):
         return
 
     translation_name = build_translation_output_name(srt_path, translate_to)
-    translation_path = OUT_DIR / translation_name
+    translation_path = srt_path.parent / translation_name
     translation_device = pick_translation_device()
     loop.call_soon_threadsafe(asyncio.create_task, update_job(
         job_id,
@@ -605,9 +795,10 @@ class StartTranscriptionRequest(BaseModel):
     compute_type: str = "float16"
     vad: bool = True
     beam_size: int = 5
+    language: str = "auto"
 
 class StartTranslationRequest(BaseModel):
-    srt_path: str              # relative to /work/out, prefixed with "out:"
+    srt_path: str              # prefixed with "in:" or "upload:"
     translate_to: str = "pl"
 
 app = FastAPI()
@@ -618,31 +809,76 @@ def index():
     return (APP_DIR / "static" / "index.html").read_text(encoding="utf-8")
 
 @app.get("/api/files")
-def list_files():
+def list_files(dir: Optional[str] = None):
     if not IN_DIR.exists():
-        return {"files": []}
+        return {"dir": "", "parent": None, "dirs": [], "files": []}
 
+    rel = ""
+    if dir:
+        try:
+            rel = safe_relpath(dir)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+    base = IN_DIR / rel if rel else IN_DIR
+    if not base.exists():
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if not base.is_dir():
+        raise HTTPException(status_code=400, detail="Not a folder")
+
+    dirs = []
     files = []
-    # proste listowanie (rekurencja, ale ograniczona sensownie)
-    for p in IN_DIR.rglob("*"):
-        if p.is_file() and p.suffix.lower() in MEDIA_EXT:
-            rel = p.relative_to(IN_DIR).as_posix()
-            files.append(rel)
+    for p in base.iterdir():
+        if p.is_dir():
+            dirs.append(p.name)
+        elif p.is_file() and p.suffix.lower() in MEDIA_EXT:
+            files.append(p.name)
 
-    # sort dla wygody
+    dirs.sort()
     files.sort()
-    return {"files": files}
+
+    parent = None
+    if rel:
+        parent = Path(rel).parent.as_posix()
+        if parent == ".":
+            parent = ""
+
+    return {"dir": rel, "parent": parent, "dirs": dirs, "files": files}
+
+@app.get("/api/languages")
+def list_languages():
+    whisper = [{"code": code, "name": WHISPER_LANGUAGES[code]} for code in sorted(WHISPER_LANGUAGES)]
+    translation = [
+        {"code": code, "name": WHISPER_LANGUAGES.get(code, code)}
+        for code in sorted(NLLB_LANG_MAP)
+    ]
+    return {"whisper": whisper, "translation": translation}
 
 @app.get("/api/srt-files")
-def list_srt_files():
+def list_srt_files(dir: Optional[str] = None):
+    if not IN_DIR.exists():
+        return {"dir": "", "files": []}
+
+    rel = ""
+    if dir:
+        try:
+            rel = safe_relpath(dir)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid path")
+
+    base = IN_DIR / rel if rel else IN_DIR
+    if not base.exists():
+        raise HTTPException(status_code=404, detail="Folder not found")
+    if not base.is_dir():
+        raise HTTPException(status_code=400, detail="Not a folder")
+
     files = []
-    if OUT_DIR.exists():
-        for p in OUT_DIR.rglob("*.srt"):
-            if p.is_file():
-                rel = p.relative_to(OUT_DIR).as_posix()
-                files.append(f"out:{rel}")
+    for p in base.iterdir():
+        if p.is_file() and p.suffix.lower() == ".srt":
+            files.append(p.name)
+
     files.sort()
-    return {"files": files}
+    return {"dir": rel, "files": files}
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...)):
@@ -665,6 +901,11 @@ async def upload(file: UploadFile = File(...)):
 @app.post("/api/jobs")
 async def start_transcription(req: StartTranscriptionRequest):
     job_id = uuid.uuid4().hex
+    language = (req.language or "auto").lower()
+    if language == "auto":
+        language = None
+    elif language not in WHISPER_LANG_CODES:
+        raise HTTPException(status_code=400, detail="Unsupported language")
 
     # resolve input path
     if req.path.startswith("upload:"):
@@ -695,7 +936,9 @@ async def start_transcription(req: StartTranscriptionRequest):
             "input": str(input_path),
             "display_input": display_path,
             "output_name": None,
+            "output_path": None,
             "transcription_compute_type": req.compute_type,
+            "requested_language": language or "auto",
             "detected_language": None,
             "language_probability": None,
             "error": None,
@@ -715,6 +958,7 @@ async def start_transcription(req: StartTranscriptionRequest):
         req.compute_type,
         req.vad,
         req.beam_size,
+        language,
     ))
 
     return {"job_id": job_id}
@@ -722,13 +966,23 @@ async def start_transcription(req: StartTranscriptionRequest):
 @app.post("/api/translations")
 async def start_translation(req: StartTranslationRequest):
     job_id = uuid.uuid4().hex
-    if not req.srt_path.startswith("out:"):
+    if req.srt_path.startswith("in:"):
+        try:
+            rel = safe_relpath(req.srt_path.split("in:", 1)[1])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid SRT path")
+        input_path = IN_DIR / rel
+        display_input = f"in:{rel}"
+    elif req.srt_path.startswith("upload:"):
+        name = req.srt_path.split("upload:", 1)[1]
+        try:
+            rel = safe_relpath(name)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid SRT path")
+        input_path = UPLOAD_DIR / rel
+        display_input = f"upload:{rel}"
+    else:
         raise HTTPException(status_code=400, detail="Invalid SRT path")
-    try:
-        rel = safe_relpath(req.srt_path.split("out:", 1)[1])
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid SRT path")
-    input_path = OUT_DIR / rel
     if not input_path.exists():
         raise HTTPException(status_code=404, detail=f"SRT not found: {rel}")
     if input_path.suffix.lower() != ".srt":
@@ -745,7 +999,7 @@ async def start_translation(req: StartTranslationRequest):
             "progress": 0.0,
             "translation_progress": 0.0,
             "input": str(input_path),
-            "display_input": f"out:{rel}",
+            "display_input": display_input,
             "translation_output_name": None,
             "translation_output_path": None,
             "translation_language": req.translate_to,
@@ -821,11 +1075,15 @@ async def download_srt(job_id: str):
     if not ready or not job.get("output_name"):
         raise HTTPException(status_code=400, detail="SRT not ready")
 
-    out_path = OUT_DIR / job["output_name"]
+    output_path = job.get("output_path")
+    if not output_path:
+        raise HTTPException(status_code=400, detail="SRT not ready")
+    out_path = Path(output_path)
     if not out_path.exists():
         raise HTTPException(status_code=404, detail="SRT file missing on disk")
 
-    return FileResponse(str(out_path), filename=job["output_name"])
+    filename = job.get("output_name") or out_path.name
+    return FileResponse(str(out_path), filename=filename)
 
 @app.get("/api/jobs/{job_id}/srt-translated")
 async def download_srt_translated(job_id: str):
@@ -836,8 +1094,12 @@ async def download_srt_translated(job_id: str):
     if job.get("translation_status") != "done" or not job.get("translation_output_name"):
         raise HTTPException(status_code=400, detail="Translated SRT not ready")
 
-    out_path = OUT_DIR / job["translation_output_name"]
+    output_path = job.get("translation_output_path")
+    if not output_path:
+        raise HTTPException(status_code=400, detail="Translated SRT not ready")
+    out_path = Path(output_path)
     if not out_path.exists():
         raise HTTPException(status_code=404, detail="Translated SRT missing on disk")
 
-    return FileResponse(str(out_path), filename=job["translation_output_name"])
+    filename = job.get("translation_output_name") or out_path.name
+    return FileResponse(str(out_path), filename=filename)
