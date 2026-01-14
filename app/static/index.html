@@ -415,6 +415,10 @@
       min-width: 180px;
     }
 
+    #batchStatus{
+      margin-right: 8px;
+    }
+
     .small{
       font-size: 12px;
       color: var(--muted);
@@ -520,6 +524,7 @@
 
       <div class="toolbar" style="margin-top:14px;">
         <button id="startTranscribeBtn" class="primary" onclick="startTranscription()">Start transkrypcji</button>
+        <button id="startBatchBtn" onclick="startBatchTranscription()">Transkrybuj wszystko</button>
         <button id="startTranslateBtn" class="primary" onclick="startTranslation()">Start tlumaczenia</button>
         <button id="stopBtn" class="danger" onclick="stopCurrentJob()" disabled>Stop</button>
         <button id="resetBtn" class="danger" onclick="resetUi()" disabled>Reset Timerow</button>
@@ -531,7 +536,10 @@
         <div class="barGroup">
           <div class="barLabel">
             <span>Transkrypcja</span>
-            <span id="transcriptionPct">0.0%</span>
+            <span>
+              <span id="batchStatus" class="small"></span>
+              <span id="transcriptionPct">0.0%</span>
+            </span>
           </div>
           <div class="bar"><div id="barFillTranscription"></div></div>
         </div>
@@ -570,6 +578,11 @@ let translationStatus = "-";
 let currentDir = "";
 let parentDir = null;
 let selectedInputPath = null;
+let batchActive = false;
+let batchQueue = [];
+let batchTotal = 0;
+let batchDone = 0;
+let batchSrtSet = new Set();
 
 const TRANSCRIPTION_MODELS = [
   "tiny",
@@ -609,6 +622,28 @@ function joinPath(dir, name){
 
 function titleCase(text){
   return text.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function updateBatchStatus(){
+  const el = document.getElementById("batchStatus");
+  if(!el){
+    return;
+  }
+  if(batchActive){
+    el.textContent = `Ukonczono ${batchDone}/${batchTotal}`;
+  }else{
+    el.textContent = "";
+  }
+}
+
+function hasSrtFor(fileName, srtSet){
+  const base = fileName.replace(/\.[^/.]+$/, "");
+  for(const name of srtSet){
+    if(name.startsWith(`${base}.`) && name.endsWith(".srt")){
+      return true;
+    }
+  }
+  return false;
 }
 
 function applyTheme(name){
@@ -735,15 +770,12 @@ function updateStopButton(){
 }
 
 async function refreshFiles(){
-  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
-  const res = await fetch(`/api/files${query}`);
-  const data = await res.json();
-  const sel = document.getElementById("fileSelect");
-  sel.innerHTML = "";
-  if(!res.ok){
-    alert(data.detail || res.statusText);
+  const data = await fetchFileList();
+  if(!data){
     return;
   }
+  const sel = document.getElementById("fileSelect");
+  sel.innerHTML = "";
   currentDir = data.dir || "";
   parentDir = data.parent;
   document.getElementById("currentDir").textContent = currentDir ? `/work/in/${currentDir}` : "/work/in";
@@ -773,6 +805,17 @@ async function refreshFiles(){
   refreshSrtFiles();
 }
 
+async function fetchFileList(){
+  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
+  const res = await fetch(`/api/files${query}`);
+  const data = await res.json();
+  if(!res.ok){
+    alert(data.detail || res.statusText);
+    return null;
+  }
+  return data;
+}
+
 function goUp(){
   if(parentDir === null || parentDir === undefined){
     return;
@@ -784,16 +827,13 @@ function goUp(){
 }
 
 async function refreshSrtFiles(preferred){
-  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
-  const res = await fetch(`/api/srt-files${query}`);
-  const data = await res.json();
+  const data = await fetchSrtList();
+  if(!data){
+    return;
+  }
   const sel = document.getElementById("srtSelect");
   const current = preferred || sel.value;
   sel.innerHTML = "";
-  if(!res.ok){
-    alert(data.detail || res.statusText);
-    return;
-  }
   for(const f of data.files){
     const opt = document.createElement("option");
     opt.value = f;
@@ -806,6 +846,17 @@ async function refreshSrtFiles(preferred){
   if(!sel.value && data.files.length){
     sel.value = data.files[0];
   }
+}
+
+async function fetchSrtList(){
+  const query = currentDir ? `?dir=${encodeURIComponent(currentDir)}` : "";
+  const res = await fetch(`/api/srt-files${query}`);
+  const data = await res.json();
+  if(!res.ok){
+    alert(data.detail || res.statusText);
+    return null;
+  }
+  return data;
 }
 
 async function loadLanguages(){
@@ -921,8 +972,14 @@ function resetUi(){
   setTranslationStatus(null, null, null);
   setLang(null, null);
   resetTimers();
+  batchActive = false;
+  batchQueue = [];
+  batchTotal = 0;
+  batchDone = 0;
+  updateBatchStatus();
 
   document.getElementById("startTranscribeBtn").disabled = false;
+  document.getElementById("startBatchBtn").disabled = false;
   document.getElementById("startTranslateBtn").disabled = false;
   document.getElementById("resetBtn").disabled = false;
   updateStopButton();
@@ -952,13 +1009,7 @@ async function uploadFile(){
   info.textContent = "OK. Server path: " + uploadedServerPath;
 }
 
-async function startTranscription(){
-  const path = uploadedServerPath || selectedInputPath;
-  if(!path){
-    alert("Wybierz plik z listy albo wgraj plik.");
-    return;
-  }
-
+async function startTranscriptionForPath(path, isBatch){
   setTranscriptionProgress(0);
   setProgressText(0, translationPct, translationStatus);
   setTranscriptionStatus("wysylam job...");
@@ -967,6 +1018,7 @@ async function startTranscription(){
   document.getElementById("downloadLinkOriginal").style.display = "none";
   document.getElementById("downloadLinkOriginal").href = "#";
   document.getElementById("startTranscribeBtn").disabled = true;
+  document.getElementById("startBatchBtn").disabled = true;
   document.getElementById("resetBtn").disabled = false;
   updateStopButton();
 
@@ -995,12 +1047,92 @@ async function startTranscription(){
     setTranscriptionStatus("blad");
     stopTimer("transcription");
     document.getElementById("startTranscribeBtn").disabled = false;
+    document.getElementById("startBatchBtn").disabled = false;
     alert(data.detail || res.statusText);
-    return;
+    return null;
   }
 
   transcriptionJobId = data.job_id;
-  listenTranscriptionJob(transcriptionJobId);
+  return new Promise((resolve) => {
+    listenTranscriptionJob(transcriptionJobId, resolve);
+  });
+}
+
+async function startTranscription(){
+  const path = uploadedServerPath || selectedInputPath;
+  if(!path){
+    alert("Wybierz plik z listy albo wgraj plik.");
+    return;
+  }
+  await startTranscriptionForPath(path, false);
+}
+
+async function startBatchTranscription(){
+  if(batchActive){
+    return;
+  }
+  const data = await fetchFileList();
+  if(!data){
+    return;
+  }
+  const files = data.files || [];
+  if(!files.length){
+    alert("Brak plikow do transkrypcji w tym folderze.");
+    return;
+  }
+  const srtData = await fetchSrtList();
+  const srtFiles = (srtData && srtData.files) ? srtData.files : [];
+
+  batchActive = true;
+  batchQueue = files.slice();
+  batchTotal = files.length;
+  batchDone = 0;
+  batchSrtSet = new Set(srtFiles);
+  updateBatchStatus();
+
+  document.getElementById("startBatchBtn").disabled = true;
+  document.getElementById("startTranscribeBtn").disabled = true;
+
+  processNextBatch();
+}
+
+async function processNextBatch(){
+  if(!batchActive){
+    return;
+  }
+  if(batchQueue.length === 0){
+    batchActive = false;
+    updateBatchStatus();
+    document.getElementById("startBatchBtn").disabled = false;
+    document.getElementById("startTranscribeBtn").disabled = false;
+    return;
+  }
+
+  const fileName = batchQueue.shift();
+  if(hasSrtFor(fileName, batchSrtSet)){
+    batchDone += 1;
+    updateBatchStatus();
+    processNextBatch();
+    return;
+  }
+
+  const path = joinPath(currentDir, fileName);
+  selectedInputPath = path;
+  document.getElementById("selectedFile").textContent = path;
+  document.getElementById("metaLine").textContent = currentDir
+    ? `zrodlo: /work/in/${currentDir}`
+    : "zrodlo: /work/in";
+
+  const job = await startTranscriptionForPath(path, true);
+  if(!batchActive){
+    return;
+  }
+  if(job && job.output_name){
+    batchSrtSet.add(job.output_name);
+  }
+  batchDone += 1;
+  updateBatchStatus();
+  processNextBatch();
 }
 
 async function startTranslation(){
@@ -1070,12 +1202,20 @@ async function stopCurrentJob(){
   }else{
     setTranscriptionStatus("stopping");
   }
+  if(batchActive){
+    batchActive = false;
+    batchQueue = [];
+    batchTotal = 0;
+    batchDone = 0;
+    updateBatchStatus();
+  }
   updateStopButton();
 }
 
-function listenTranscriptionJob(jobId){
+function listenTranscriptionJob(jobId, onComplete){
   if(transcribeEs) transcribeEs.close();
   transcribeEs = new EventSource(`/api/jobs/${jobId}/events`);
+  let completed = false;
 
   transcribeEs.onmessage = (ev) => {
     const job = JSON.parse(ev.data);
@@ -1102,17 +1242,35 @@ function listenTranscriptionJob(jobId){
 
     if(job.transcription_status === "done"){
       stopTimer("transcription");
-      document.getElementById("startTranscribeBtn").disabled = false;
+      if(!batchActive){
+        document.getElementById("startTranscribeBtn").disabled = false;
+        document.getElementById("startBatchBtn").disabled = false;
+      }
       refreshSrtFiles(job.output_name);
       transcribeEs.close();
+      if(!completed){
+        completed = true;
+        if(onComplete){
+          onComplete(job);
+        }
+      }
     }
 
     if(job.status === "error" || job.status === "cancelled"){
       stopTimer("transcription");
-      document.getElementById("startTranscribeBtn").disabled = false;
+      if(!batchActive){
+        document.getElementById("startTranscribeBtn").disabled = false;
+        document.getElementById("startBatchBtn").disabled = false;
+      }
       transcribeEs.close();
       if(job.status === "error"){
         alert(job.error || "Unknown error");
+      }
+      if(!completed){
+        completed = true;
+        if(onComplete){
+          onComplete(job);
+        }
       }
     }
 

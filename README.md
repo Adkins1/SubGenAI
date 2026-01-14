@@ -35,6 +35,8 @@ Wyniki SRT trafiaja do tego samego folderu co plik zrodlowy.
 ## Funkcje
 - Dwa niezalezne procesy: Start transkrypcji i Start tlumaczenia.
 - Wybierasz jezyk audio/wideo (Auto albo z listy) i model transkrypcji.
+- Przycisk "Transkrybuj wszystko" iteruje po filmach w folderze i pomija te z gotowym SRT.
+- Przy batchu widzisz licznik "Ukonczono X/Y" obok paska transkrypcji.
 - Lista tlumaczen obejmuje wiele jezykow (Polski na gorze, reszta alfabetycznie).
 - Nawigacja po folderach SMB, bez ladowania wszystkich plikow naraz.
 - Dwa paski postepu, tabela statusow i przycisk Stop.
@@ -50,8 +52,8 @@ Wyniki SRT trafiaja do tego samego folderu co plik zrodlowy.
 ## Konfiguracja (.env)
 Przyklad:
 ```env
-SMB_SHARE=//192.168.10.5/cloud
-SMB_USER=adam
+SMB_SHARE=//NAS/Media
+SMB_USER=twoj_user
 SMB_PASS="TwojeHaslo!@#$"
 SMB_OPTS=rw,vers=3.0,dir_mode=0775,file_mode=0664
 
@@ -60,19 +62,20 @@ TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 # CUDA_BASE=nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 ```
 
-Uwaga: jeśli haslo ma znaki specjalne, zostaw je w cudzyslowie.
+Uwaga: podmien SMB_* na swoje dane. Jesli haslo ma znaki specjalne, zostaw je w cudzyslowie.
 
 ## Domyslna karta graficzna
 Docker udostepnia wszystkie GPU (gpus: all), a PyTorch uzywa domyslnie pierwszej karty widzianej przez CUDA (cuda:0).
 
-## Usecase 1: standardowe uruchomienie i korzystanie
+## Usecase 1: standardowe uruchomienie i korzystanie <span style="color:#6fa8ff;">&#127799;</span>
 1. Ustaw SMB_* w .env (share + login + haslo).
 2. docker compose up -d --build
 3. Otworz http://localhost:8000
 4. Wybierz folder i plik w /work/in, ustaw model i jezyk audio, kliknij Start transkrypcji.
 5. Wybierz plik SRT z listy i uruchom Start tlumaczenia.
+6. Alternatywnie: uzyj "Transkrybuj wszystko", aby przetworzyc caly folder.
 
-## Usecase 2: nieodpowiednia karta graficzna (CUDA)
+## Usecase 2: nieodpowiednia karta graficzna (CUDA) <span style="color:#ffb86b;">&#128161;</span>
 Jesli widzisz ostrzezenia o nieobslugiwanej architekturze GPU albo fallback na CPU:
 - Zmien TORCH_INDEX_URL w .env
 - (Opcjonalnie) ustaw TORCH_VERSION i/lub CUDA_BASE
@@ -80,10 +83,23 @@ Jesli widzisz ostrzezenia o nieobslugiwanej architekturze GPU albo fallback na C
 
 Tabela (RTX 40xx i 50xx):
 
-| Seria | Arch | Zalecany TORCH_INDEX_URL | Dodatkowe uwagi |
+| Model | Arch | Zalecany TORCH_INDEX_URL | Dodatkowe uwagi |
 |------|------|---------------------------|-----------------|
-| RTX 40xx | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | Zostaw CUDA_BASE domyslne, chyba ze masz bledy builda |
-| RTX 50xx | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | Jesli nadal jest fallback, ustaw nowsze CUDA_BASE (np. 12.8.x/13.x) |
+| RTX 4060 | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | Zostaw CUDA_BASE domyslne, chyba ze masz bledy builda |
+| RTX 4060 Ti | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4070 | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4070 Super | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4070 Ti | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4070 Ti Super | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4080 | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4080 Super | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 4090 | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | jw. |
+| RTX 5060 | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | Jesli nadal jest fallback, ustaw nowsze CUDA_BASE (np. 12.8.x/13.x) |
+| RTX 5060 Ti | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | jw. |
+| RTX 5070 | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | jw. |
+| RTX 5070 Ti | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | jw. |
+| RTX 5080 | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | jw. |
+| RTX 5090 | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | jw. |
 
 Po zmianach:
 1. docker compose down
