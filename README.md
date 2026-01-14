@@ -21,8 +21,8 @@
 
 ## Opis
 SUBGENAI to aplikacja web do lokalnej transkrypcji wideo/audio i generowania napisow SRT w kontenerze GPU,
-z opcjonalnym tlumaczeniem na polski (offline) w tym samym UI. Wejscie pochodzi z /work/in (mount z hosta)
-lub z uploadu do kontenera. Wyniki trafiaja do /work/out.
+z tlumaczeniem offline w tym samym UI. Wejscie pochodzi z /work/in (SMB share) albo z uploadu do kontenera.
+Wyniki SRT trafiaja do tego samego folderu co plik zrodlowy.
 
 ## Najwazniejsze biblioteki
 - faster-whisper (ASR)
@@ -32,53 +32,78 @@ lub z uploadu do kontenera. Wyniki trafiaja do /work/out.
 - python-multipart (upload plikow)
 - ffmpeg/ffprobe (czas trwania i obsluga mediow)
 
-## Co nowego
-- Rozdzielone procesy: osobno Start transkrypcji i Start tlumaczenia.
-- Tlumaczenie wybiera konkretny plik SRT z /work/out.
-- Dwa paski postepu + tabela statusow pod spodem.
-- Przycisk Stop zatrzymuje aktywny proces (transkrypcja lub tlumaczenie).
-- Linki do pobrania: SRT oryginalny oraz SRT tlumaczony.
+## Funkcje
+- Dwa niezalezne procesy: Start transkrypcji i Start tlumaczenia.
+- Wybierasz jezyk audio/wideo (Auto albo z listy) i model transkrypcji.
+- Lista tlumaczen obejmuje wiele jezykow (Polski na gorze, reszta alfabetycznie).
+- Nawigacja po folderach SMB, bez ladowania wszystkich plikow naraz.
+- Dwa paski postepu, tabela statusow i przycisk Stop.
+- Theme switcher (5 wariantow kolorystycznych).
 
-## UI - jak dziala
-- Lista plikow: odswiezanie listy z /work/in i wybor pliku.
-- Upload: opcjonalny, zapisuje plik do /work/uploads w kontenerze.
-- Start transkrypcji: wysyla job do API, UI pokazuje pasek postepu, status i timer.
-- Start tlumaczenia: wybor jezyka (na razie tylko polski) + wybor SRT z /work/out.
-- Dwa paski postepu (transkrypcja / tlumaczenie) i tabela statusow (czas, model, jezyk, progres).
-- Stop: zatrzymuje aktywny job.
-- Po zakonczeniu widoczne sa linki do pobrania SRT oryginalnego i tlumaczonego.
+## Struktura katalogow i zapis wynikow
+- /work/in -> SMB share z mediami (czytanie + zapis SRT obok plikow).
+- /work/uploads -> pliki wyslane przez UI.
+- /work/out -> wolumen pomocniczy (obecnie nieuzywany).
+- /hf -> cache modeli.
+- Nazwy SRT: nazwa.<lang>.srt (np. .jp.srt, .pl.srt).
 
-## Uruchomienie
-1. Ustaw FILES_DIR w .env (sciezka na hoscie do plikow z wideo/audio).
-2. docker compose up --build
-3. Otworz http://localhost:8000
-
-Przyklad .env:
+## Konfiguracja (.env)
+Przyklad:
 ```env
-FILES_DIR=C:/Media
+SMB_SHARE=//192.168.10.5/cloud
+SMB_USER=adam
+SMB_PASS="TwojeHaslo!@#$"
+SMB_OPTS=rw,vers=3.0,dir_mode=0775,file_mode=0664
+
 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 # TORCH_VERSION=2.5.1
 # CUDA_BASE=nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
 ```
 
-## Struktura katalogow i nazwy plikow
-- /work/in -> katalog z mediami (read-only, z hosta).
-- /work/out -> zapis SRT na hosta (./out).
-- /work/uploads -> pliki wyslane przez UI.
-- /hf -> cache modeli.
-- Nazwy SRT: nazwa.<lang>.srt (np. .jp.srt, .pl.srt).
+Uwaga: jeśli haslo ma znaki specjalne, zostaw je w cudzyslowie.
 
-## Wskazowki GPU
-- Tlumaczenie korzysta z GPU tylko gdy PyTorch obsluguje Twoja architekture CUDA.
-- Jesli widzisz fallback na CPU, ustaw TORCH_INDEX_URL na nowsze wheel'e (np. cu128 lub cu130)
-  i przebuduj obraz.
+## Domyslna karta graficzna
+Docker udostepnia wszystkie GPU (gpus: all), a PyTorch uzywa domyslnie pierwszej karty widzianej przez CUDA (cuda:0).
+
+## Usecase 1: standardowe uruchomienie i korzystanie
+1. Ustaw SMB_* w .env (share + login + haslo).
+2. docker compose up -d --build
+3. Otworz http://localhost:8000
+4. Wybierz folder i plik w /work/in, ustaw model i jezyk audio, kliknij Start transkrypcji.
+5. Wybierz plik SRT z listy i uruchom Start tlumaczenia.
+
+## Usecase 2: nieodpowiednia karta graficzna (CUDA)
+Jesli widzisz ostrzezenia o nieobslugiwanej architekturze GPU albo fallback na CPU:
+- Zmien TORCH_INDEX_URL w .env
+- (Opcjonalnie) ustaw TORCH_VERSION i/lub CUDA_BASE
+- Przebuduj obraz
+
+Tabela (RTX 40xx i 50xx):
+
+| Seria | Arch | Zalecany TORCH_INDEX_URL | Dodatkowe uwagi |
+|------|------|---------------------------|-----------------|
+| RTX 40xx | sm_89 | https://download.pytorch.org/whl/cu121 (lub cu124/cu128) | Zostaw CUDA_BASE domyslne, chyba ze masz bledy builda |
+| RTX 50xx | sm_120 | https://download.pytorch.org/whl/cu128 (lub cu130) | Jesli nadal jest fallback, ustaw nowsze CUDA_BASE (np. 12.8.x/13.x) |
+
+Po zmianach:
+1. docker compose down
+2. docker compose build --no-cache
+3. docker compose up -d
 
 ## API (skrot)
-- GET /api/files -> lista mediow z /work/in
-- GET /api/srt-files -> lista SRT z /work/out
+- GET /api/files -> lista mediow z /work/in (z parametrem dir)
+- GET /api/srt-files -> lista SRT z /work/in (z parametrem dir)
+- GET /api/languages -> jezyki transkrypcji i tlumaczen
 - POST /api/jobs -> start transkrypcji
 - POST /api/translations -> start tlumaczenia
 - POST /api/jobs/{id}/stop -> zatrzymanie joba
 - GET /api/jobs/{id}/events -> SSE ze statusem
 - GET /api/jobs/{id}/srt -> pobierz SRT oryginalny
-- GET /api/jobs/{id}/srt-translated -> pobierz SRT tlumaczony
+- GET /api/jobs/{id}/srt-translated -> pobierz SRT tlumaczenie
+
+<p style="margin-top:10px;">
+  <span style="color:#ff6b6b;">&#10024;</span>
+  <span style="color:#5adba0;">&#128155;</span>
+  <span style="color:#6fa8ff;">&#128049;</span>
+  <span style="color:#ffb86b;">&#127800;</span>
+</p>
